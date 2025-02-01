@@ -29,9 +29,9 @@ issues:
 linters-settings:
   govet:
     enable:
-    - fieldalignment
+      - fieldalignment
   dogsled:
-    max-blank-identifiers: 3
+    max-blank-identifiers: 2
 
 output:
   formats: colored-line-number

@@ -28,8 +28,7 @@ jobs:
 
       - name: Install linters
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin \
-            && go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
 
       - name: Run formatting
         run: gofmt -s -w ./ && golangci-lint run ./...
