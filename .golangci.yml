@@ -1,0 +1,37 @@
+linters:
+  enable:
+    - govet
+    - gocritic
+    - gofmt
+    - gocyclo
+    - misspell
+    - bodyclose
+    - ineffassign
+    - canonicalheader
+    - containedctx
+    - copyloopvar
+    - dogsled
+    - errname
+    - forbidigo
+    - forcetypeassert
+    - gochecknoglobals
+    - goconst
+    - unused
+
+run:
+  timeout: 5m
+  go: '1.23'
+
+issues:
+  exclude-dirs:
+    - "test"
+
+linters-settings:
+  govet:
+    enable:
+    - fieldalignment
+  dogsled:
+    max-blank-identifiers: 3
+
+output:
+  formats: colored-line-number
