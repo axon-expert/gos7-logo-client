@@ -3,9 +3,9 @@ package test
 import (
 	"fmt"
 	gos7logo "gos7-logo"
-	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"testing"
 )
 
@@ -29,14 +29,14 @@ func TestMain(m *testing.M) {
 }
 
 func FuzzClientWriteRead(f *testing.F) {
-	f.Add("VD3", rand.Intn(math.MaxInt32))
-	f.Add("V2.1", rand.Intn(2))
-	f.Add("V94", rand.Intn(math.MaxInt8))
-	f.Add("VW31", rand.Intn(math.MaxInt16))
+	f.Add("VD3", uint32(rand.Intn(100)))
+	f.Add("V2.1", uint32(0))
+	f.Add("V94", uint32(rand.Intn(100)))
+	f.Add("VW31", uint32(rand.Intn(100)))
 	f.Fuzz(writeReadTest)
 }
 
-func writeReadTest(t *testing.T, vmAddr string, value int) {
+func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	addr, err := gos7logo.NewVmAddrFromString(vmAddr)
 	if err != nil {
 		t.Errorf("no correct vm address `%s`: %s", vmAddr, err)
@@ -49,7 +49,11 @@ func writeReadTest(t *testing.T, vmAddr string, value int) {
 		t.Errorf("failed read from %s: %s", vmAddr, err)
 	}
 
+	if addr.Type == gos7logo.Bit {
+		value &^= 1 << 0
+	}
+
 	if value != v {
-		t.Errorf("write and reade values not equals: %s", vmAddr)
+		t.Errorf("write and read values not equals for %s : %s != %s", vmAddr, strconv.Itoa(int(value)), strconv.Itoa(int(v)))
 	}
 }

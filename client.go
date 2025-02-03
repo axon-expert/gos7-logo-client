@@ -3,6 +3,7 @@ package gos7logo
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -10,31 +11,10 @@ import (
 	"github.com/robinson/gos7"
 )
 
-type dataType int
-
-func (t dataType) Size() int {
-	switch t {
-	case Bit:
-		return 2
-	case Byte:
-		return 1
-	case Word:
-		return 2
-	case DWord:
-		return 4
-	case Real:
-		return 4
-	case Counter:
-		return 2
-	case Timer:
-		return 2
-	default:
-		return 0
-	}
-}
+type DataType int
 
 const (
-	Byte dataType = iota
+	Byte DataType = iota
 	Bit
 	Word
 	Counter
@@ -43,74 +23,71 @@ const (
 	Real
 )
 
-type vmAddr struct {
-	Bit    *int
-	Prefix string
-	Byte   int
+func (t DataType) Size() int {
+	switch t {
+	case Bit, Byte:
+		return 1
+	case Word, Counter, Timer:
+		return 2
+	case DWord, Real:
+		return 4
+	default:
+		return 0
+	}
 }
 
-func NewVmAddr(p string, byteAddr int, bit ...int) vmAddr {
-	var bitAddr *int = nil
-	if len(bit) > 0 {
-		bitAddr = &bit[0]
+func parseTypeByVmAddr(addr string) (DataType, error) {
+	switch {
+	case regexp.MustCompile(`V[0-9]{1,4}\.[0-7]`).MatchString(addr):
+		return Bit, nil
+	case regexp.MustCompile(`V[0-9]+`).MatchString(addr):
+		return Byte, nil
+	case regexp.MustCompile(`VW[0-9]+`).MatchString(addr):
+		return Word, nil
+	case regexp.MustCompile(`VD[0-9]+`).MatchString(addr):
+		return DWord, nil
 	}
-	return vmAddr{Prefix: p, Bit: bitAddr, Byte: byteAddr}
+
+	return 0, errors.New("unknown address format")
+}
+
+type vmAddr struct {
+	Type DataType
+	Byte uint32
+	Bit  uint8
+}
+
+func NewVmAddr(t DataType, byteAddr uint32, bit uint8) vmAddr {
+	return vmAddr{Type: t, Bit: bit, Byte: byteAddr}
 }
 
 func NewVmAddrFromString(addr string) (vmAddr, error) {
-	var builder strings.Builder
+	addrType, err := parseTypeByVmAddr(addr)
+	if err != nil {
+		return vmAddr{}, fmt.Errorf("failed parse data type: %s", err)
+	}
 	addrSlice := strings.Split(addr, ".")
-	var bitAddr *int
+	var bitAddr uint8
 	if len(addrSlice) > 1 {
 		bitAddrInt, err := strconv.Atoi(addrSlice[1])
 		if err != nil {
 			return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
 		}
-		bitAddr = &bitAddrInt
+		bitAddr = uint8(bitAddrInt)
 	}
-	var byteAddr int
-	var prefix string
+	var byteAddr uint32
 	for i, ch := range addrSlice[0] {
-		if unicode.IsLetter(ch) {
-			builder.WriteRune(ch)
-		} else if unicode.IsDigit(ch) {
+		if unicode.IsDigit(ch) {
 			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
 			if err != nil {
 				return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
 			}
-			byteAddr = tempByteAddr
-			prefix = builder.String()
+			byteAddr = uint32(tempByteAddr)
 			break
 		}
 	}
-	return vmAddr{Prefix: prefix, Bit: bitAddr, Byte: byteAddr}, nil
-}
 
-func (a *vmAddr) String() string {
-	var builder strings.Builder
-	builder.WriteString(a.Prefix)
-	builder.WriteString(strconv.Itoa(a.Byte))
-	if a.Bit != nil {
-		builder.WriteString(".")
-		builder.WriteString(strconv.Itoa(*a.Bit))
-	}
-	return builder.String()
-}
-
-func parseVmAddr(addr vmAddr) (int, dataType, error) {
-	switch addr.Prefix {
-	case "V":
-		if addr.Bit == nil {
-			return addr.Byte, Byte, nil
-		}
-		return addr.Byte*8 + *addr.Bit, Bit, nil
-	case "VW":
-		return addr.Byte, Word, nil
-	case "VD":
-		return addr.Byte, DWord, nil
-	}
-
-	return 0, 0, errors.New("unknown address format")
+	return vmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
 }
 
 type ConnectOpt struct {
@@ -120,8 +97,8 @@ type ConnectOpt struct {
 }
 
 type Client interface {
-	Read(addr vmAddr) (int, error)
-	Write(addr vmAddr, value int) error
+	Read(addr vmAddr) (uint32, error)
+	Write(addr vmAddr, value uint32) error
 	Disconnect() error
 }
 
@@ -144,91 +121,78 @@ func NewClient(opt *ConnectOpt) (*client, error) {
 		handler: handler}, nil
 }
 
-func (c *client) Read(addr vmAddr) (int, error) {
-	start, dataType, err := parseVmAddr(addr)
-	if err != nil {
-		return 0, err
-	}
-	size := dataType.Size()
+func (c *client) Read(addr vmAddr) (uint32, error) {
+	size := addr.Type.Size()
 	buff := make([]byte, size)
-	if err := c.client.AGReadDB(c.dbNumber, start, size, buff); err != nil {
+	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
 		return 0, err
 	}
-	result, err := c.getIntFromBuffer(dataType, buff)
+	result, err := c.getIntFromBuffer(addr.Type, buff)
 	if err != nil {
 		return 0, err
 	}
 	return result, nil
 }
 
-func (c *client) Write(addr vmAddr, value int) error {
-	start, dataType, err := parseVmAddr(addr)
-	if err != nil {
-		return err
-	}
-	size := dataType.Size()
+func (c *client) Write(addr vmAddr, value uint32) error {
+	size := addr.Type.Size()
 	buff := make([]byte, size)
-	if err := c.writeToBuffer(dataType, buff, value); err != nil {
+	if err := c.writeToBuffer(addr, buff, value); err != nil {
 		return err
 	}
-	if err := c.client.AGWriteDB(c.dbNumber, start, size, buff); err != nil {
+	if err := c.client.AGWriteDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *client) writeToBuffer(dataType dataType, buff []byte, value int) error {
-	switch dataType {
+func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
+	switch addr.Type {
 	case Bit:
-		c.helper.SetValueAt(buff, 0, int16(value))
+		if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), addr.Type.Size(), buff); err != nil {
+			return err
+		}
+		if value > 0 {
+			buff[0] |= addr.Bit << 0
+		} else {
+			buff[0] &^= addr.Bit << 0
+		}
 	case Byte:
-		c.helper.SetValueAt(buff, 0, int8(value))
-	case Word:
-		c.helper.SetValueAt(buff, 0, int16(value))
+		c.helper.SetValueAt(buff, 0, uint8(value))
 	case DWord:
-		c.helper.SetValueAt(buff, 0, int32(value))
+		c.helper.SetValueAt(buff, 0, uint32(value))
 	case Real:
 		c.helper.SetValueAt(buff, 0, float32(value))
-	case Counter:
-		c.helper.SetValueAt(buff, 0, int16(value))
-	case Timer:
-		c.helper.SetValueAt(buff, 0, int16(value))
+	case Word, Counter, Timer:
+		c.helper.SetValueAt(buff, 0, uint16(value))
 	default:
 		return errors.New("write: unknown data type")
 	}
 
 	return nil
 }
-func (c *client) getIntFromBuffer(dataType dataType, buff []byte) (int, error) {
+func (c *client) getIntFromBuffer(dataType DataType, buff []byte) (uint32, error) {
 	switch dataType {
 	case Bit:
-		var result int16
+		var result uint8
 		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
+		return uint32(result >> 0 & 1), nil
 	case Byte:
-		var result int8
+		var result uint8
 		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
-	case Word:
-		var result int16
+		return uint32(result), nil
+	case Word, Counter, Timer:
+		var result uint16
 		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
+		return uint32(result), nil
 	case DWord:
-		var result int32
+		var result uint32
 		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
+		return uint32(result), nil
 	case Real:
 		var result float32
 		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
-	case Counter:
-		var result int16
-		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
-	case Timer:
-		var result int16
-		c.helper.GetValueAt(buff, 0, &result)
-		return int(result), nil
+		return uint32(result), nil
 	}
 
 	return 0, errors.New("write: unknown data type")
