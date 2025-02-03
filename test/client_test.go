@@ -37,10 +37,14 @@ func FuzzClientWriteRead(f *testing.F) {
 }
 
 func writeReadTest(t *testing.T, vmAddr string, value int) {
-	if err := client.Write(vmAddr, value); err != nil {
+	addr, err := gos7logo.NewVmAddrFromString(vmAddr)
+	if err != nil {
+		t.Errorf("no correct vm address `%s`: %s", vmAddr, err)
+	}
+	if err := client.Write(addr, value); err != nil {
 		t.Errorf("failed write from %s: %s", vmAddr, err)
 	}
-	v, err := client.Read(vmAddr)
+	v, err := client.Read(addr)
 	if err != nil {
 		t.Errorf("failed read from %s: %s", vmAddr, err)
 	}

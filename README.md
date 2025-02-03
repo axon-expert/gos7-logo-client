@@ -15,7 +15,10 @@ if err != nil { ... }
 defer client.Disconnect()
 
 value := 100
-vmAddr := "V94"
+vmAddr, err := gos7logo.NewVmAddrFromString("V94") 
+// you can specify a bit `gos7logo.NewVmAddr("V", 2, 1)`
+// or `gos7logo.NewVmAddr("V", 94)`
+if err != nil { ... }
 
 // Запись значения
 if err := client.Write(vmAddr, value); err != nil { ... }

@@ -3,9 +3,9 @@ package gos7logo
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/robinson/gos7"
 )
@@ -43,37 +43,71 @@ const (
 	Real
 )
 
-func parseVmAddr(addr string) (int, dataType, error) {
-	switch {
-	case regexp.MustCompile(`V[0-9]{1,4}\.[0-7]`).MatchString(addr):
-		addrSlice := strings.Split(addr[1:], ".")
-		addrByte, err := strconv.Atoi(addrSlice[0])
+type VmAddr struct {
+	Bit    *int
+	Prefix string
+	Byte   int
+}
+
+func NewVmAddr(p string, byteAddr int, bit ...int) VmAddr {
+	var bitAddr *int = nil
+	if len(bit) > 0 {
+		bitAddr = &bit[0]
+	}
+	return VmAddr{Prefix: p, Bit: bitAddr, Byte: byteAddr}
+}
+
+func NewVmAddrFromString(addr string) (VmAddr, error) {
+	var builder strings.Builder
+	addrSlice := strings.Split(addr, ".")
+	var bitAddr *int
+	if len(addrSlice) > 1 {
+		bitAddrInt, err := strconv.Atoi(addrSlice[1])
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed parse `byte` for `%s` from `%s`", addrSlice[0], addr)
+			return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
 		}
-		addrBit, err := strconv.Atoi(addrSlice[1])
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed parse `bit` for `%s` from `%s`", addrSlice[1], addr)
+		bitAddr = &bitAddrInt
+	}
+	var byteAddr int
+	var prefix string
+	for i, ch := range addrSlice[0] {
+		if unicode.IsLetter(ch) {
+			builder.WriteRune(ch)
+		} else if unicode.IsDigit(ch) {
+			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
+			if err != nil {
+				return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
+			}
+			byteAddr = tempByteAddr
+			prefix = builder.String()
+			break
 		}
-		return (addrByte * 8) + addrBit, Bit, nil
-	case regexp.MustCompile(`V[0-9]+`).MatchString(addr):
-		start, err := strconv.Atoi(addr[1:])
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed parse start address `Byte` for `%s` from `%s`", addr[1:], addr)
+	}
+	return VmAddr{Prefix: prefix, Bit: bitAddr, Byte: byteAddr}, nil
+}
+
+func (a *VmAddr) String() string {
+	var builder strings.Builder
+	builder.WriteString(a.Prefix)
+	builder.WriteString(strconv.Itoa(a.Byte))
+	if a.Bit != nil {
+		builder.WriteString(".")
+		builder.WriteString(strconv.Itoa(*a.Bit))
+	}
+	return builder.String()
+}
+
+func parseVmAddr(addr VmAddr) (int, dataType, error) {
+	switch addr.Prefix {
+	case "V":
+		if addr.Bit == nil {
+			return addr.Byte, Byte, nil
 		}
-		return start, Byte, nil
-	case regexp.MustCompile(`VW[0-9]+`).MatchString(addr):
-		start, err := strconv.Atoi(addr[2:])
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed parse start address `Word` for `%s` from `%s`", addr[2:], addr)
-		}
-		return start, Word, nil
-	case regexp.MustCompile(`VD[0-9]+`).MatchString(addr):
-		start, err := strconv.Atoi(addr[2:])
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed parse start address `DWord` for `%s` from `%s`", addr[2:], addr)
-		}
-		return start, DWord, nil
+		return addr.Byte*8 + *addr.Bit, Bit, nil
+	case "VW":
+		return addr.Byte, Word, nil
+	case "VD":
+		return addr.Byte, DWord, nil
 	}
 
 	return 0, 0, errors.New("unknown address format")
@@ -86,8 +120,8 @@ type ConnectOpt struct {
 }
 
 type Client interface {
-	Read(vmAddr string) (int, error)
-	Write(vmAddr string, value int) error
+	Read(addr VmAddr) (int, error)
+	Write(addr VmAddr, value int) error
 	Disconnect() error
 }
 
@@ -110,8 +144,8 @@ func NewClient(opt *ConnectOpt) (*client, error) {
 		handler: handler}, nil
 }
 
-func (c *client) Read(vmAddr string) (int, error) {
-	start, dataType, err := parseVmAddr(vmAddr)
+func (c *client) Read(addr VmAddr) (int, error) {
+	start, dataType, err := parseVmAddr(addr)
 	if err != nil {
 		return 0, err
 	}
@@ -127,8 +161,8 @@ func (c *client) Read(vmAddr string) (int, error) {
 	return result, nil
 }
 
-func (c *client) Write(vmAddr string, value int) error {
-	start, dataType, err := parseVmAddr(vmAddr)
+func (c *client) Write(addr VmAddr, value int) error {
+	start, dataType, err := parseVmAddr(addr)
 	if err != nil {
 		return err
 	}
