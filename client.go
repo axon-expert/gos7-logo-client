@@ -43,28 +43,28 @@ const (
 	Real
 )
 
-type VmAddr struct {
+type vmAddr struct {
 	Bit    *int
 	Prefix string
 	Byte   int
 }
 
-func NewVmAddr(p string, byteAddr int, bit ...int) VmAddr {
+func NewVmAddr(p string, byteAddr int, bit ...int) vmAddr {
 	var bitAddr *int = nil
 	if len(bit) > 0 {
 		bitAddr = &bit[0]
 	}
-	return VmAddr{Prefix: p, Bit: bitAddr, Byte: byteAddr}
+	return vmAddr{Prefix: p, Bit: bitAddr, Byte: byteAddr}
 }
 
-func NewVmAddrFromString(addr string) (VmAddr, error) {
+func NewVmAddrFromString(addr string) (vmAddr, error) {
 	var builder strings.Builder
 	addrSlice := strings.Split(addr, ".")
 	var bitAddr *int
 	if len(addrSlice) > 1 {
 		bitAddrInt, err := strconv.Atoi(addrSlice[1])
 		if err != nil {
-			return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
+			return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
 		}
 		bitAddr = &bitAddrInt
 	}
@@ -76,17 +76,17 @@ func NewVmAddrFromString(addr string) (VmAddr, error) {
 		} else if unicode.IsDigit(ch) {
 			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
 			if err != nil {
-				return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
+				return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
 			}
 			byteAddr = tempByteAddr
 			prefix = builder.String()
 			break
 		}
 	}
-	return VmAddr{Prefix: prefix, Bit: bitAddr, Byte: byteAddr}, nil
+	return vmAddr{Prefix: prefix, Bit: bitAddr, Byte: byteAddr}, nil
 }
 
-func (a *VmAddr) String() string {
+func (a *vmAddr) String() string {
 	var builder strings.Builder
 	builder.WriteString(a.Prefix)
 	builder.WriteString(strconv.Itoa(a.Byte))
@@ -97,7 +97,7 @@ func (a *VmAddr) String() string {
 	return builder.String()
 }
 
-func parseVmAddr(addr VmAddr) (int, dataType, error) {
+func parseVmAddr(addr vmAddr) (int, dataType, error) {
 	switch addr.Prefix {
 	case "V":
 		if addr.Bit == nil {
@@ -120,8 +120,8 @@ type ConnectOpt struct {
 }
 
 type Client interface {
-	Read(addr VmAddr) (int, error)
-	Write(addr VmAddr, value int) error
+	Read(addr vmAddr) (int, error)
+	Write(addr vmAddr, value int) error
 	Disconnect() error
 }
 
@@ -144,7 +144,7 @@ func NewClient(opt *ConnectOpt) (*client, error) {
 		handler: handler}, nil
 }
 
-func (c *client) Read(addr VmAddr) (int, error) {
+func (c *client) Read(addr vmAddr) (int, error) {
 	start, dataType, err := parseVmAddr(addr)
 	if err != nil {
 		return 0, err
@@ -161,7 +161,7 @@ func (c *client) Read(addr VmAddr) (int, error) {
 	return result, nil
 }
 
-func (c *client) Write(addr VmAddr, value int) error {
+func (c *client) Write(addr vmAddr, value int) error {
 	start, dataType, err := parseVmAddr(addr)
 	if err != nil {
 		return err
