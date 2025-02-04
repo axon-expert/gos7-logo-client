@@ -3,6 +3,7 @@ package gos7logo
 import (
 	"errors"
 	"fmt"
+	gos7patch "gos7-logo/gos7-patch"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,13 +106,13 @@ type Client interface {
 type client struct {
 	helper   gos7.Helper
 	client   gos7.Client
-	handler  *gos7.TCPClientHandler
+	handler  *gos7patch.TCPClientHandler
 	area     string
 	dbNumber int
 }
 
-func NewClient(opt *ConnectOpt) (*client, error) {
-	handler := gos7.NewTCPClientHandler(opt.Addr, opt.Rack, opt.Slot)
+func NewClient(opt *ConnectOpt, snap7TSAP, logoTSAP uint16) (*client, error) {
+	handler := gos7patch.NewTCPClientHandlerWithTSAP(opt.Addr, opt.Rack, opt.Slot, snap7TSAP, logoTSAP)
 	if err := handler.Connect(); err != nil {
 		return nil, err
 	}

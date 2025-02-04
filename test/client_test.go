@@ -15,7 +15,7 @@ func TestMain(m *testing.M) {
 	cl, err := gos7logo.NewClient(&gos7logo.ConnectOpt{
 		Addr: "localhost:102",
 		Rack: 0, Slot: 1,
-	})
+	}, 0x100, 0x200)
 	if err != nil {
 		fmt.Printf("failed connect: %s\n", err)
 	}

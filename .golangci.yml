@@ -25,6 +25,7 @@ run:
 issues:
   exclude-dirs:
     - "test"
+    - "gos7-patch"
 
 linters-settings:
   govet:
