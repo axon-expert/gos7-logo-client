@@ -120,7 +120,7 @@ func (c *client) Read(addr vmAddr) (uint32, error) {
 	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
 		return 0, err
 	}
-	result, err := c.getIntFromBuffer(addr.Type, buff)
+	result, err := c.getIntFromBuffer(addr, buff)
 	if err != nil {
 		return 0, err
 	}
@@ -142,7 +142,7 @@ func (c *client) Write(addr vmAddr, value uint32) error {
 func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 	switch addr.Type {
 	case Bit:
-		if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), addr.Type.Size(), buff); err != nil {
+		if err := c.client.AGReadDB(c.dbNumber, int(addr.Bit), addr.Type.Size(), buff); err != nil {
 			return err
 		}
 		if value > 0 {
@@ -164,12 +164,12 @@ func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 
 	return nil
 }
-func (c *client) getIntFromBuffer(dataType DataType, buff []byte) (uint32, error) {
-	switch dataType {
+func (c *client) getIntFromBuffer(addr vmAddr, buff []byte) (uint32, error) {
+	switch addr.Type {
 	case Bit:
 		var result uint8
 		c.helper.GetValueAt(buff, 0, &result)
-		return uint32(result >> 0 & 1), nil
+		return uint32(result >> addr.Bit & 1), nil
 	case Byte:
 		var result uint8
 		c.helper.GetValueAt(buff, 0, &result)
