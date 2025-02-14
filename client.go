@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/robinson/gos7"
 )
 
 type DataType int
@@ -91,12 +89,6 @@ func NewVmAddrFromString(addr string) (vmAddr, error) {
 	return vmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
 }
 
-type ConnectOpt struct {
-	Addr string
-	Rack int
-	Slot int
-}
-
 type Client interface {
 	Read(addr vmAddr) (uint32, error)
 	Write(addr vmAddr, value uint32) error
@@ -104,21 +96,21 @@ type Client interface {
 }
 
 type client struct {
-	helper   gos7.Helper
-	client   gos7.Client
+	helper   gos7patch.Helper
+	client   gos7patch.Client
 	handler  *gos7patch.TCPClientHandler
 	area     string
 	dbNumber int
 }
 
-func NewClient(opt *ConnectOpt, snap7TSAP, logoTSAP uint16) (*client, error) {
-	handler := gos7patch.NewTCPClientHandlerWithTSAP(opt.Addr, opt.Rack, opt.Slot, snap7TSAP, logoTSAP)
+func NewClient(addr string, rack int, slot int, snap7TSAP, logoTSAP uint16) (*client, error) {
+	handler := gos7patch.NewTCPClientHandlerWithTSAP(addr, rack, slot, snap7TSAP, logoTSAP)
 	if err := handler.Connect(); err != nil {
 		return nil, err
 	}
 	return &client{
 		area: "DB", dbNumber: 1,
-		client:  gos7.NewClient(handler),
+		client:  gos7patch.NewClient(handler),
 		handler: handler}, nil
 }
 

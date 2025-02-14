@@ -12,10 +12,7 @@ import (
 var client gos7logo.Client
 
 func TestMain(m *testing.M) {
-	cl, err := gos7logo.NewClient(&gos7logo.ConnectOpt{
-		Addr: "localhost:102",
-		Rack: 0, Slot: 1,
-	}, 0x100, 0x200)
+	cl, err := gos7logo.NewClient("localhost:102", 0, 1, 0x100, 0x200)
 	if err != nil {
 		fmt.Printf("failed connect: %s\n", err)
 	}
@@ -30,7 +27,7 @@ func TestMain(m *testing.M) {
 
 func FuzzClientWriteRead(f *testing.F) {
 	f.Add("VD3", uint32(rand.Intn(100)))
-	f.Add("V2.1", uint32(0))
+	f.Add("V2.4", uint32(0))
 	f.Add("V94", uint32(rand.Intn(100)))
 	f.Add("VW31", uint32(rand.Intn(100)))
 	f.Fuzz(writeReadTest)
