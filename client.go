@@ -3,7 +3,7 @@ package gos7logo
 import (
 	"errors"
 	"fmt"
-	gos7patch "gos7-logo/gos7-patch"
+	gos7patch "github.com/axon-expert/gos7-logo-client/gos7-patch"
 	"regexp"
 	"strconv"
 	"strings"

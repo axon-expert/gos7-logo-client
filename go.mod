@@ -1,4 +1,4 @@
-module gos7-logo
+module github.com/axon-expert/gos7-logo-client
 
 go 1.24.0
 

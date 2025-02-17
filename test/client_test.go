@@ -2,11 +2,12 @@ package test
 
 import (
 	"fmt"
-	gos7logo "gos7-logo"
 	"math/rand"
 	"os"
 	"strconv"
 	"testing"
+
+	gos7logo "github.com/axon-expert/gos7-logo-client"
 )
 
 var client gos7logo.Client
