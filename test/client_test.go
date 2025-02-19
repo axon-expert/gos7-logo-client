@@ -34,6 +34,51 @@ func FuzzClientWriteRead(f *testing.F) {
 	f.Fuzz(writeReadTest)
 }
 
+func TestClientWriteManyRead(t *testing.T) {
+	vdVmAddr, err := gos7logo.NewVmAddrFromString("VD3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vwVmAddr, err := gos7logo.NewVmAddrFromString("VW31")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1VmAddr, err := gos7logo.NewVmAddrFromString("V2.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2VmAddr, err := gos7logo.NewVmAddrFromString("V94")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vmAddrVals := []gos7logo.VmAddrValue{
+		{VmAddr: vdVmAddr, Value: uint32(rand.Intn(100))},
+		{VmAddr: v1VmAddr, Value: uint32(1)},
+		{VmAddr: v2VmAddr, Value: uint32(rand.Intn(100))},
+		{VmAddr: vwVmAddr, Value: uint32(rand.Intn(100))},
+	}
+
+	if err := client.WriteMany(vmAddrVals...); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, val := range vmAddrVals {
+		v, err := client.Read(val.VmAddr)
+		if err != nil {
+			t.Errorf("failed read: %s", err)
+		}
+
+		if val.VmAddr.Type == gos7logo.Bit {
+			val.Value &^= 1 << 0
+		}
+
+		if val.Value != v {
+			t.Errorf("write and read values not equals: %s != %s", strconv.Itoa(int(val.Value)), strconv.Itoa(int(v)))
+		}
+	}
+}
+
 func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	addr, err := gos7logo.NewVmAddrFromString(vmAddr)
 	if err != nil {

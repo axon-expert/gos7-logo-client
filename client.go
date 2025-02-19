@@ -3,11 +3,13 @@ package gos7logo
 import (
 	"errors"
 	"fmt"
-	gos7patch "github.com/axon-expert/gos7-logo-client/gos7-patch"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
+
+	gos7patch "github.com/axon-expert/gos7-logo-client/gos7-patch"
 )
 
 type DataType int
@@ -89,9 +91,15 @@ func NewVmAddrFromString(addr string) (vmAddr, error) {
 	return vmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
 }
 
+type VmAddrValue struct {
+	VmAddr vmAddr
+	Value  uint32
+}
+
 type Client interface {
 	Read(addr vmAddr) (uint32, error)
 	Write(addr vmAddr, value uint32) error
+	WriteMany(addrs ...VmAddrValue) error
 	Disconnect() error
 }
 
@@ -134,6 +142,28 @@ func (c *client) Write(addr vmAddr, value uint32) error {
 		return err
 	}
 	if err := c.client.AGWriteDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
+		return err
+	}
+	return nil
+}
+func (c *client) WriteMany(args ...VmAddrValue) error {
+	if len(args) == 0 {
+		return fmt.Errorf("failed `WriteMany`: args is empty")
+	}
+	minByte := slices.MinFunc(args, compareVmAddrByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrByte)
+	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + 1
+	buff := make([]byte, size)
+	if err := c.client.AGReadDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
+		return err
+	}
+	for _, val := range args {
+		offset := int(val.VmAddr.Byte - minByte.VmAddr.Byte)
+		if err := c.writeToBuffer(val.VmAddr, buff[offset:], val.Value); err != nil {
+			return err
+		}
+	}
+	if err := c.client.AGWriteDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
 		return err
 	}
 	return nil
