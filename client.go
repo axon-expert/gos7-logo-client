@@ -122,22 +122,14 @@ func NewClient(addr string, rack int, slot int, snap7TSAP, logoTSAP uint16) (*cl
 		handler: handler}, nil
 }
 
-func (c *client) Read(addr vmAddr) (uint32, error) {
-	size := addr.Type.Size()
-	buff := make([]byte, size)
-	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
-		return 0, err
-	}
-	result, err := c.getIntFromBuffer(addr, buff)
-	if err != nil {
-		return 0, err
-	}
-	return result, nil
-}
-
 func (c *client) Write(addr vmAddr, value uint32) error {
 	size := addr.Type.Size()
 	buff := make([]byte, size)
+	if addr.Type == Bit {
+		if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
+			return err
+		}
+	}
 	if err := c.writeToBuffer(addr, buff, value); err != nil {
 		return err
 	}
@@ -172,13 +164,10 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 	switch addr.Type {
 	case Bit:
-		if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), addr.Type.Size(), buff); err != nil {
-			return err
-		}
 		if value > 0 {
-			buff[0] |= addr.Bit << 0
+			buff[0] |= 1 << addr.Bit
 		} else {
-			buff[0] &^= addr.Bit << 0
+			buff[0] &^= 1 << addr.Bit
 		}
 	case Byte:
 		c.helper.SetValueAt(buff, 0, uint8(value))
@@ -194,7 +183,24 @@ func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 
 	return nil
 }
+
+func (c *client) Read(addr vmAddr) (uint32, error) {
+	size := addr.Type.Size()
+	buff := make([]byte, size)
+	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
+		return 0, err
+	}
+	result, err := c.getIntFromBuffer(addr, buff)
+	if err != nil {
+		return 0, err
+	}
+	return result, nil
+}
+
 func (c *client) getIntFromBuffer(addr vmAddr, buff []byte) (uint32, error) {
+	if len(buff) < addr.Type.Size() {
+		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
+	}
 	switch addr.Type {
 	case Bit:
 		var result uint8

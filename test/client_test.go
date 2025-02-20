@@ -54,7 +54,7 @@ func TestClientWriteManyRead(t *testing.T) {
 
 	vmAddrVals := []gos7logo.VmAddrValue{
 		{VmAddr: vdVmAddr, Value: uint32(rand.Intn(100))},
-		{VmAddr: v1VmAddr, Value: uint32(1)},
+		{VmAddr: v1VmAddr, Value: uint32(0)},
 		{VmAddr: v2VmAddr, Value: uint32(rand.Intn(100))},
 		{VmAddr: vwVmAddr, Value: uint32(rand.Intn(100))},
 	}
@@ -70,7 +70,11 @@ func TestClientWriteManyRead(t *testing.T) {
 		}
 
 		if val.VmAddr.Type == gos7logo.Bit {
-			val.Value &^= 1 << 0
+			expectedBit := (val.Value >> uint32(val.VmAddr.Bit)) & 1
+			if expectedBit != v {
+				t.Errorf("write and read values not equals for bit: expected %d, got %d", expectedBit, v)
+			}
+			continue
 		}
 
 		if val.Value != v {
@@ -93,7 +97,11 @@ func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	}
 
 	if addr.Type == gos7logo.Bit {
-		value &^= 1 << 0
+		expectedBit := (0 >> uint32(addr.Bit)) & 1
+		if expectedBit != 0 {
+			t.Errorf("write and read values not equals for bit: expected %d, got %d", expectedBit, v)
+		}
+		return
 	}
 
 	if value != v {
