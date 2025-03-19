@@ -98,10 +98,14 @@ type VmAddrValue struct {
 
 type Client interface {
 	Read(addr VmAddr) (uint32, error)
+	ReadMany(addrs ...VmAddr) ([]byte, error)
+	ReadManyTo(buf []byte, addrs ...VmAddr) error
 	Write(addr VmAddr, value uint32) error
 	WriteMany(addrs ...VmAddrValue) error
 	Disconnect() error
 }
+
+var _ Client = &client{}
 
 type client struct {
 	helper   gos7patch.Helper
@@ -142,9 +146,9 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	if len(args) == 0 {
 		return fmt.Errorf("failed `WriteMany`: args is empty")
 	}
-	minByte := slices.MinFunc(args, compareVmAddrByte)
-	maxByte := slices.MaxFunc(args, compareVmAddrByte)
-	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + 1
+	minByte := slices.MinFunc(args, compareVmAddrValueByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrValueByte)
+	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + maxByte.VmAddr.Type.Size()
 	buff := make([]byte, size)
 	if err := c.client.AGReadDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
 		return err
@@ -195,6 +199,40 @@ func (c *client) Read(addr VmAddr) (uint32, error) {
 		return 0, err
 	}
 	return result, nil
+}
+
+func (c *client) ReadMany(args ...VmAddr) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	minByte := slices.MinFunc(args, compareVmAddrByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrByte)
+	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
+	buff := make([]byte, size)
+	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
+		return nil, err
+	}
+	if err := c.ReadManyTo(buff, args...); err != nil {
+		return nil, err
+	}
+
+	return buff, nil
+}
+
+func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
+	if len(args) == 0 {
+		return nil
+	}
+	minByte := slices.MinFunc(args, compareVmAddrByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrByte)
+	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
+	if len(buff) < size {
+		return fmt.Errorf("ReadManyTo: need %d bytes, but buffer only %d bytes", size, len(buff))
+	}
+	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
