@@ -52,27 +52,27 @@ func parseTypeByVmAddr(addr string) (DataType, error) {
 	return 0, errors.New("unknown address format")
 }
 
-type vmAddr struct {
+type VmAddr struct {
 	Type DataType
 	Byte uint32
 	Bit  uint8
 }
 
-func NewVmAddr(t DataType, byteAddr uint32, bit uint8) vmAddr {
-	return vmAddr{Type: t, Bit: bit, Byte: byteAddr}
+func NewVmAddr(t DataType, byteAddr uint32, bit uint8) VmAddr {
+	return VmAddr{Type: t, Bit: bit, Byte: byteAddr}
 }
 
-func NewVmAddrFromString(addr string) (vmAddr, error) {
+func NewVmAddrFromString(addr string) (VmAddr, error) {
 	addrType, err := parseTypeByVmAddr(addr)
 	if err != nil {
-		return vmAddr{}, fmt.Errorf("failed parse data type: %s", err)
+		return VmAddr{}, fmt.Errorf("failed parse data type: %s", err)
 	}
 	addrSlice := strings.Split(addr, ".")
 	var bitAddr uint8
 	if len(addrSlice) > 1 {
 		bitAddrInt, err := strconv.Atoi(addrSlice[1])
 		if err != nil {
-			return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
+			return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
 		}
 		bitAddr = uint8(bitAddrInt)
 	}
@@ -81,24 +81,24 @@ func NewVmAddrFromString(addr string) (vmAddr, error) {
 		if unicode.IsDigit(ch) {
 			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
 			if err != nil {
-				return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
+				return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
 			}
 			byteAddr = uint32(tempByteAddr)
 			break
 		}
 	}
 
-	return vmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
+	return VmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
 }
 
 type VmAddrValue struct {
-	VmAddr vmAddr
+	VmAddr VmAddr
 	Value  uint32
 }
 
 type Client interface {
-	Read(addr vmAddr) (uint32, error)
-	Write(addr vmAddr, value uint32) error
+	Read(addr VmAddr) (uint32, error)
+	Write(addr VmAddr, value uint32) error
 	WriteMany(addrs ...VmAddrValue) error
 	Disconnect() error
 }
@@ -122,7 +122,7 @@ func NewClient(addr string, rack int, slot int, snap7TSAP, logoTSAP uint16) (*cl
 		handler: handler}, nil
 }
 
-func (c *client) Write(addr vmAddr, value uint32) error {
+func (c *client) Write(addr VmAddr, value uint32) error {
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if addr.Type == Bit {
@@ -161,7 +161,7 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	return nil
 }
 
-func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
+func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
 	switch addr.Type {
 	case Bit:
 		if value > 0 {
@@ -184,7 +184,7 @@ func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 	return nil
 }
 
-func (c *client) Read(addr vmAddr) (uint32, error) {
+func (c *client) Read(addr VmAddr) (uint32, error) {
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
@@ -197,7 +197,7 @@ func (c *client) Read(addr vmAddr) (uint32, error) {
 	return result, nil
 }
 
-func (c *client) getIntFromBuffer(addr vmAddr, buff []byte) (uint32, error) {
+func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
 	if len(buff) < addr.Type.Size() {
 		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
 	}
