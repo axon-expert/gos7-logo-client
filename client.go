@@ -52,27 +52,27 @@ func parseTypeByVmAddr(addr string) (DataType, error) {
 	return 0, errors.New("unknown address format")
 }
 
-type vmAddr struct {
+type VmAddr struct {
 	Type DataType
 	Byte uint32
 	Bit  uint8
 }
 
-func NewVmAddr(t DataType, byteAddr uint32, bit uint8) vmAddr {
-	return vmAddr{Type: t, Bit: bit, Byte: byteAddr}
+func NewVmAddr(t DataType, byteAddr uint32, bit uint8) VmAddr {
+	return VmAddr{Type: t, Bit: bit, Byte: byteAddr}
 }
 
-func NewVmAddrFromString(addr string) (vmAddr, error) {
+func NewVmAddrFromString(addr string) (VmAddr, error) {
 	addrType, err := parseTypeByVmAddr(addr)
 	if err != nil {
-		return vmAddr{}, fmt.Errorf("failed parse data type: %s", err)
+		return VmAddr{}, fmt.Errorf("failed parse data type: %s", err)
 	}
 	addrSlice := strings.Split(addr, ".")
 	var bitAddr uint8
 	if len(addrSlice) > 1 {
 		bitAddrInt, err := strconv.Atoi(addrSlice[1])
 		if err != nil {
-			return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
+			return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
 		}
 		bitAddr = uint8(bitAddrInt)
 	}
@@ -81,27 +81,31 @@ func NewVmAddrFromString(addr string) (vmAddr, error) {
 		if unicode.IsDigit(ch) {
 			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
 			if err != nil {
-				return vmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
+				return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
 			}
 			byteAddr = uint32(tempByteAddr)
 			break
 		}
 	}
 
-	return vmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
+	return VmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
 }
 
 type VmAddrValue struct {
-	VmAddr vmAddr
+	VmAddr VmAddr
 	Value  uint32
 }
 
 type Client interface {
-	Read(addr vmAddr) (uint32, error)
-	Write(addr vmAddr, value uint32) error
+	Read(addr VmAddr) (uint32, error)
+	ReadMany(addrs ...VmAddr) ([]byte, error)
+	ReadManyTo(buf []byte, addrs ...VmAddr) error
+	Write(addr VmAddr, value uint32) error
 	WriteMany(addrs ...VmAddrValue) error
 	Disconnect() error
 }
+
+var _ Client = &client{}
 
 type client struct {
 	helper   gos7patch.Helper
@@ -122,7 +126,7 @@ func NewClient(addr string, rack int, slot int, snap7TSAP, logoTSAP uint16) (*cl
 		handler: handler}, nil
 }
 
-func (c *client) Write(addr vmAddr, value uint32) error {
+func (c *client) Write(addr VmAddr, value uint32) error {
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if addr.Type == Bit {
@@ -142,9 +146,9 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	if len(args) == 0 {
 		return fmt.Errorf("failed `WriteMany`: args is empty")
 	}
-	minByte := slices.MinFunc(args, compareVmAddrByte)
-	maxByte := slices.MaxFunc(args, compareVmAddrByte)
-	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + 1
+	minByte := slices.MinFunc(args, compareVmAddrValueByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrValueByte)
+	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + maxByte.VmAddr.Type.Size()
 	buff := make([]byte, size)
 	if err := c.client.AGReadDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
 		return err
@@ -161,7 +165,7 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	return nil
 }
 
-func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
+func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
 	switch addr.Type {
 	case Bit:
 		if value > 0 {
@@ -184,7 +188,7 @@ func (c *client) writeToBuffer(addr vmAddr, buff []byte, value uint32) error {
 	return nil
 }
 
-func (c *client) Read(addr vmAddr) (uint32, error) {
+func (c *client) Read(addr VmAddr) (uint32, error) {
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
@@ -197,7 +201,41 @@ func (c *client) Read(addr vmAddr) (uint32, error) {
 	return result, nil
 }
 
-func (c *client) getIntFromBuffer(addr vmAddr, buff []byte) (uint32, error) {
+func (c *client) ReadMany(args ...VmAddr) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	minByte := slices.MinFunc(args, compareVmAddrByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrByte)
+	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
+	buff := make([]byte, size)
+	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
+		return nil, err
+	}
+	if err := c.ReadManyTo(buff, args...); err != nil {
+		return nil, err
+	}
+
+	return buff, nil
+}
+
+func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
+	if len(args) == 0 {
+		return nil
+	}
+	minByte := slices.MinFunc(args, compareVmAddrByte)
+	maxByte := slices.MaxFunc(args, compareVmAddrByte)
+	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
+	if len(buff) < size {
+		return fmt.Errorf("ReadManyTo: need %d bytes, but buffer only %d bytes", size, len(buff))
+	}
+	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
 	if len(buff) < addr.Type.Size() {
 		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
 	}

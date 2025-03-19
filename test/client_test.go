@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	gos7logo "github.com/axon-expert/gos7-logo-client"
+	"github.com/stretchr/testify/require"
 )
 
 var client gos7logo.Client
 
 func TestMain(m *testing.M) {
-	cl, err := gos7logo.NewClient("localhost:102", 0, 1, 0x100, 0x200)
+	cl, err := gos7logo.NewClient("localhost:1102", 0, 1, 0x100, 0x200)
 	if err != nil {
 		fmt.Printf("failed connect: %s\n", err)
 	}
@@ -81,6 +82,37 @@ func TestClientWriteManyRead(t *testing.T) {
 			t.Errorf("write and read values not equals: %s != %s", strconv.Itoa(int(val.Value)), strconv.Itoa(int(v)))
 		}
 	}
+}
+
+func vmAddr(s string) gos7logo.VmAddr {
+	v, err := gos7logo.NewVmAddrFromString(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func TestClientReadMany(t *testing.T) {
+	addr1 := vmAddr("V3")
+	addr2 := vmAddr("V4.1")
+	addr3 := vmAddr("V4.2")
+
+	if err := client.WriteMany(
+		gos7logo.VmAddrValue{VmAddr: addr1, Value: 123},
+		gos7logo.VmAddrValue{VmAddr: addr2, Value: 1},
+		gos7logo.VmAddrValue{VmAddr: addr3, Value: 0},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := client.ReadMany(addr1, addr2, addr3)
+	require.Equal(t, 2, len(res))
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.Equal(t, 123, int(res[0]))
+	require.True(t, (res[1]&(1<<addr2.Bit)) != 0)
+	require.True(t, (res[1]&(1<<addr3.Bit)) == 0)
 }
 
 func writeReadTest(t *testing.T, vmAddr string, value uint32) {
