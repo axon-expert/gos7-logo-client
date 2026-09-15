@@ -27,7 +27,7 @@ jobs:
         run: go mod tidy
 
       - name: Install tools
-        run: go install tool
+        run: go install -modfile=golangci-lint.mod tool && go install tool
 
       - name: Run formatting
-        run: gofmt -s -w ./ && golangci-lint run ./...
+        run: make format-lint
