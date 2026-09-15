@@ -11,10 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var client gos7logo.Client
+var client gos7logo.Client // nolint:gochecknoglobals
 
 func TestMain(m *testing.M) {
-	cl, err := gos7logo.NewClient("localhost:1102", 0, 1, 0x100, 0x200)
+	// TODO: launch snap7 server
+	cl, err := gos7logo.NewClient("localhost:102", 0, 1, 0x100, 0x200)
 	if err != nil {
 		fmt.Printf("failed connect: %s\n", err)
 	}
@@ -73,13 +74,15 @@ func TestClientWriteManyRead(t *testing.T) {
 		if val.VmAddr.Type == gos7logo.Bit {
 			expectedBit := (val.Value >> uint32(val.VmAddr.Bit)) & 1
 			if expectedBit != v {
-				t.Errorf("write and read values not equals for bit: expected %d, got %d", expectedBit, v)
+				t.Errorf("write and read values not equals for bit: expected %d, got %d",
+					expectedBit, v)
 			}
 			continue
 		}
 
 		if val.Value != v {
-			t.Errorf("write and read values not equals: %s != %s", strconv.Itoa(int(val.Value)), strconv.Itoa(int(v)))
+			t.Errorf("write and read values not equals: %s != %s",
+				strconv.Itoa(int(val.Value)), strconv.Itoa(int(v)))
 		}
 	}
 }
@@ -131,12 +134,14 @@ func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	if addr.Type == gos7logo.Bit {
 		expectedBit := (0 >> uint32(addr.Bit)) & 1
 		if expectedBit != 0 {
-			t.Errorf("write and read values not equals for bit: expected %d, got %d", expectedBit, v)
+			t.Errorf("write and read values not equals for bit: expected %d, got %d",
+				expectedBit, v)
 		}
 		return
 	}
 
 	if value != v {
-		t.Errorf("write and read values not equals for %s : %s != %s", vmAddr, strconv.Itoa(int(value)), strconv.Itoa(int(v)))
+		t.Errorf("write and read values not equals for %s : %s != %s",
+			vmAddr, strconv.Itoa(int(value)), strconv.Itoa(int(v)))
 	}
 }

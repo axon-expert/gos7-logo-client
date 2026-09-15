@@ -1,38 +1,58 @@
+version: "2"
+
 linters:
   enable:
-    - govet
-    - gocritic
-    - gofmt
-    - gocyclo
-    - misspell
     - bodyclose
-    - ineffassign
     - canonicalheader
     - containedctx
+    - contextcheck
     - copyloopvar
     - dogsled
     - errname
     - forbidigo
-    - forcetypeassert
     - gochecknoglobals
     - goconst
+    - gocritic
+    - gocyclo
+    - govet
+    - ineffassign
+    - ireturn
+    - misspell
     - unused
+  settings:
+    dogsled:
+      max-blank-identifiers: 3
+    forbidigo:
+      forbid:
+        - pattern: "^(fmt\\.Print(|f|ln)|print|println)$"
+          pkg: "^github\\.com/axon-expert/.*"
+    govet:
+      disable:
+        - fieldalignment
+  exclusions:
+    paths:
+      - "gos7-patch/.*"
+      - tests/*
+
+formatters:
+  enable:
+    - gofmt
+    - golines
+  settings:
+    gofmt:
+      simplify: true
+    golines:
+      max-len: 100
+      tab-len: 4
+  exclusions:
+    paths:
+      - "gos7-patch/.*"
+
+output:
+  formats:
+    text:
+      colors: true
 
 run:
   timeout: 5m
   go: '1.24'
-
-issues:
-  exclude-dirs:
-    - "test"
-    - "gos7-patch"
-
-linters-settings:
-  govet:
-    enable:
-      - fieldalignment
-  dogsled:
-    max-blank-identifiers: 2
-
-output:
-  formats: colored-line-number
