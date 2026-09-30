@@ -19,11 +19,17 @@ const (
 	Timer
 	DWord
 	Real
+	Output
+)
+
+const (
+	outputByteStart = uint32(1064)
+	outputByteEnd   = uint32(1071)
 )
 
 func (t DataType) Size() int {
 	switch t {
-	case Bit, Byte:
+	case Bit, Byte, Output:
 		return 1
 	case Word, Counter, Timer:
 		return 2
@@ -44,6 +50,8 @@ func (t DataType) String() string {
 		return "VW"
 	case DWord:
 		return "VD"
+	case Output:
+		return "Q"
 	}
 	return "V"
 }
@@ -58,6 +66,8 @@ func parseTypeByVmAddr(addr string) (DataType, error) {
 		return Word, nil
 	case regexp.MustCompile(`^VD[0-9]+$`).MatchString(addr):
 		return DWord, nil
+	case regexp.MustCompile(`^Q[0-9]+$`).MatchString(addr):
+		return Output, nil
 	}
 
 	return 0, errors.New("unknown address format")
@@ -89,9 +99,12 @@ func (a VmAddr) Validate() error {
 	if a.Type.Size() == 0 {
 		return fmt.Errorf("unknown data type: %d", a.Type)
 	}
-	if a.Type == Bit {
+	if a.Type == Bit || a.Type == Output {
 		if a.Bit > 7 {
 			return fmt.Errorf("bit index must be between 0 and 7: %d", a.Bit)
+		}
+		if a.Type == Output && (a.Byte < outputByteStart || a.Byte > outputByteEnd) {
+			return fmt.Errorf("output address must be between Q1 and Q64")
 		}
 		return nil
 	}
@@ -118,6 +131,10 @@ func MustNewVmAddrFromString(addr string) VmAddr {
 }
 
 func (addr VmAddr) MarshalText() ([]byte, error) {
+	if addr.Type == Output {
+		output := (addr.Byte-outputByteStart)*8 + uint32(addr.Bit) + 1
+		return fmt.Appendf(nil, "Q%d", output), nil
+	}
 	if addr.Type == Bit {
 		return fmt.Appendf(nil, "%s%d.%d", addr.Type.String(), addr.Byte, addr.Bit), nil
 	}
@@ -135,6 +152,23 @@ func (a *VmAddr) UnmarshalText(raw []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed parse data type: %s", err)
 	}
+	if addrType == Output {
+		output, err := strconv.ParseUint(addr[1:], 10, 8)
+		if err != nil {
+			return fmt.Errorf("invalid output address: %w", err)
+		}
+		if output < 1 || output > 64 {
+			return errors.New("output address must be between Q1 and Q64")
+		}
+		output--
+		*a = VmAddr{
+			Type: Output,
+			Byte: outputByteStart + uint32(output/8),
+			Bit:  uint8(output % 8),
+		}
+		return nil
+	}
+
 	addrSlice := strings.Split(addr, ".")
 	prefixLength := 1
 	if addrType == Word || addrType == DWord {

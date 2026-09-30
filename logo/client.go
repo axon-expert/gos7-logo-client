@@ -24,6 +24,7 @@ type Client interface {
 }
 
 var ErrNotConnected = errors.New("client is not connected")
+var ErrReadOnlyAddress = errors.New("address is read-only")
 
 type StreamResult struct {
 	Data VmAddrValues
@@ -77,6 +78,9 @@ func (c *client) Write(addr VmAddr, value uint32) error {
 	if err := addr.Validate(); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
+	if addr.Type == Output {
+		return fmt.Errorf("write %s: %w", addr, ErrReadOnlyAddress)
+	}
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if addr.Type == Bit {
@@ -102,6 +106,9 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	}
 	addrs := make([]VmAddr, len(args))
 	for i, arg := range args {
+		if arg.VmAddr.Type == Output {
+			return fmt.Errorf("WriteMany: %s: %w", arg.VmAddr, ErrReadOnlyAddress)
+		}
 		addrs[i] = arg.VmAddr
 	}
 	start, size, err := vmAddrRange(addrs)
@@ -132,7 +139,7 @@ func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
 		return fmt.Errorf("write: buffer too small for type %v", addr.Type)
 	}
 	switch addr.Type {
-	case Bit:
+	case Bit, Output:
 		if value > 0 {
 			buff[0] |= 1 << addr.Bit
 		} else {
@@ -280,7 +287,7 @@ func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
 		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
 	}
 	switch addr.Type {
-	case Bit:
+	case Bit, Output:
 		var result uint8
 		c.helper.GetValueAt(buff, 0, &result)
 		return uint32(result >> addr.Bit & 1), nil

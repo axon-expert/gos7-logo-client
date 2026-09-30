@@ -28,6 +28,7 @@ Addresses:
   V3.2     bit 2 at offset 3
   VW4      word at offset 4
   VD8      double word at offset 8
+  Q1       digital output 1 (LOGO! 0BA8)
   V3-V5    inclusive range (read and watch only)
 
 Connection options:
@@ -241,7 +242,7 @@ func expandAddressRange(start, end gos7logo.VmAddr) ([]gos7logo.VmAddr, error) {
 
 	startIndex := uint64(start.Byte)
 	endIndex := uint64(end.Byte)
-	if start.Type == gos7logo.Bit {
+	if start.Type == gos7logo.Bit || start.Type == gos7logo.Output {
 		startIndex = startIndex*8 + uint64(start.Bit)
 		endIndex = endIndex*8 + uint64(end.Bit)
 	}
@@ -258,7 +259,7 @@ func expandAddressRange(start, end gos7logo.VmAddr) ([]gos7logo.VmAddr, error) {
 		index := startIndex + uint64(i)
 		byteAddr := uint32(index)
 		var bit uint8
-		if start.Type == gos7logo.Bit {
+		if start.Type == gos7logo.Bit || start.Type == gos7logo.Output {
 			byteAddr = uint32(index / 8)
 			bit = uint8(index % 8)
 		}
@@ -278,6 +279,9 @@ func parseWrites(args []string) ([]gos7logo.VmAddr, []uint32, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid address %q: %w", args[i], err)
 		}
+		if addr.Type == gos7logo.Output {
+			return nil, nil, fmt.Errorf("cannot write %s: %w", addr, gos7logo.ErrReadOnlyAddress)
+		}
 		value, err := strconv.ParseUint(args[i+1], 0, 32)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid value %q: %w", args[i+1], err)
@@ -293,7 +297,7 @@ func parseWrites(args []string) ([]gos7logo.VmAddr, []uint32, error) {
 
 func validateValue(addr gos7logo.VmAddr, value uint32) error {
 	switch addr.Type {
-	case gos7logo.Bit:
+	case gos7logo.Bit, gos7logo.Output:
 		if value > 1 {
 			return errors.New("bit value must be 0 or 1")
 		}
@@ -335,7 +339,7 @@ func formatValue(addr gos7logo.VmAddr, value uint32, format string) string {
 	width := 0
 	groupSize := 3
 	bits := addr.Type.Size() * 8
-	if addr.Type == gos7logo.Bit {
+	if addr.Type == gos7logo.Bit || addr.Type == gos7logo.Output {
 		bits = 1
 	}
 	switch format {

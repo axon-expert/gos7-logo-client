@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	commandRead = "read"
-	addressVW4  = "VW4"
+	commandRead  = "read"
+	commandWrite = "write"
+	addressVW4   = "VW4"
 )
 
 type fakeClient struct {
@@ -97,6 +98,7 @@ func TestParseAddressRange(t *testing.T) {
 		{input: "VW3-VW5", want: []string{"VW3", "VW4", "VW5"}},
 		{input: "VD3-VD4", want: []string{"VD3", "VD4"}},
 		{input: "V3.6-V4.2", want: []string{"V3.6", "V3.7", "V4.0", "V4.1", "V4.2"}},
+		{input: "Q7-Q10", want: []string{"Q7", "Q8", "Q9", "Q10"}},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
@@ -160,7 +162,7 @@ func TestRunWrite(t *testing.T) {
 	client := &fakeClient{values: make(map[gos7logo.VmAddr]uint32)}
 	var output bytes.Buffer
 
-	err := run(context.Background(), []string{"write", "V3", "0xff", "V4.2", "1"},
+	err := run(context.Background(), []string{commandWrite, "V3", "0xff", "V4.2", "1"},
 		&output, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
@@ -170,6 +172,19 @@ func TestRunWrite(t *testing.T) {
 	require.Equal(t, "V3=255\nV4.2=1\n", output.String())
 }
 
+func TestRunRejectsWritingOutputBeforeConnecting(t *testing.T) {
+	connected := false
+	err := run(context.Background(), []string{commandWrite, "Q1", "1"},
+		&bytes.Buffer{}, &bytes.Buffer{}, func(gos7logo.Config) logoClient {
+			connected = true
+			return &fakeClient{}
+		})
+
+	require.ErrorIs(t, err, gos7logo.ErrReadOnlyAddress)
+	require.EqualError(t, err, "cannot write Q1: address is read-only")
+	require.False(t, connected)
+}
+
 func TestRunRejectsInvalidArgumentsBeforeConnecting(t *testing.T) {
 	connected := false
 	newClient := func(gos7logo.Config) logoClient {
@@ -177,7 +192,7 @@ func TestRunRejectsInvalidArgumentsBeforeConnecting(t *testing.T) {
 		return &fakeClient{}
 	}
 
-	err := run(context.Background(), []string{"write", "V3", "256"},
+	err := run(context.Background(), []string{commandWrite, "V3", "256"},
 		&bytes.Buffer{}, &bytes.Buffer{}, newClient)
 
 	require.EqualError(t, err, "invalid value for V3: byte value must be between 0 and 255")

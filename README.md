@@ -41,10 +41,17 @@ Read, write, or continuously watch VM addresses:
 ./logo -host 192.168.0.10 -port 102 read V1 VW2 VD4
 ./logo -host 192.168.0.10 -port 102 write V1 42 V2.3 1
 ./logo -host 192.168.0.10 -port 102 watch -interval 500ms V1 VW2
+./logo -host 192.168.0.10 -port 102 read Q1-Q8
 ```
 
 `read` and `watch` accept inclusive address ranges such as `V3-V5`, `VW10-VW15`,
 or the cross-byte bit range `V3.6-V4.2`.
+
+Digital outputs on LOGO! 0BA8 can be addressed as `Q1` through `Q64`. These
+names map to the controller's output VM range starting at `V1064.0`; see
+[LOGO!Soft Comfort V8.2.1 Operating Instructions, page 119](https://cache.industry.siemens.com/dl/files/852/109768852/att_990434/v1/Help_en-US.pdf#page=119).
+Q addresses are read-only; use a writable VM bit and LOGO! program logic to
+control a physical output remotely.
 
 Use `-f d` for decimal output (the default), `-f x` or `-f h` for hexadecimal,
 `-f b` for binary, and `-f o` for octal.

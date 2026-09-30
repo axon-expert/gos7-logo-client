@@ -97,6 +97,20 @@ func TestOperationsRequireConnection(t *testing.T) {
 	}
 }
 
+func TestWriteRejectsOutputAddress(t *testing.T) {
+	client := NewClient(NewConfig("192.0.2.1"))
+	client.connected.Store(true)
+	addr := MustNewVmAddrFromString("Q1")
+
+	err := client.Write(addr, 1)
+	require.ErrorIs(t, err, ErrReadOnlyAddress)
+	require.EqualError(t, err, "write Q1: address is read-only")
+
+	err = client.WriteMany(VmAddrValue{VmAddr: addr, Value: 1})
+	require.ErrorIs(t, err, ErrReadOnlyAddress)
+	require.EqualError(t, err, "WriteMany: Q1: address is read-only")
+}
+
 func TestStreamValidatesArguments(t *testing.T) {
 	client := NewClient(NewConfig("192.0.2.1"))
 	addr := MustNewVmAddrFromString("V1")
@@ -149,10 +163,33 @@ func TestVmAddrUnmarshalRejectsMalformedInput(t *testing.T) {
 		"V1.8",
 		"V1.2.3",
 		"V4294967296",
+		"Q0",
+		"Q65",
+		"Q1.0",
 	} {
 		t.Run(input, func(t *testing.T) {
 			var addr VmAddr
 			require.Error(t, addr.UnmarshalText([]byte(input)))
+		})
+	}
+}
+
+func TestOutputAddresses(t *testing.T) {
+	tests := []struct {
+		input string
+		want  VmAddr
+	}{
+		{input: "Q1", want: VmAddr{Type: Output, Byte: 1064, Bit: 0}},
+		{input: "Q8", want: VmAddr{Type: Output, Byte: 1064, Bit: 7}},
+		{input: "Q9", want: VmAddr{Type: Output, Byte: 1065, Bit: 0}},
+		{input: "Q64", want: VmAddr{Type: Output, Byte: 1071, Bit: 7}},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			addr, err := NewVmAddrFromString(test.input)
+			require.NoError(t, err)
+			require.Equal(t, test.want, addr)
+			require.Equal(t, test.input, addr.String())
 		})
 	}
 }
