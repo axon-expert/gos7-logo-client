@@ -4,6 +4,7 @@ package gos7patch
 // This software may be modified and distributed under the terms
 // of the BSD license. See the LICENSE file for details.
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -83,16 +84,16 @@ func NewTCPClientHandlerWithTSAP(
 }
 
 // TCPClient creator for a TCP client with address, rack and slot, implement from interface client
-// func TCPClient(address string, rack int, slot int) Client {
-// 	handler := NewTCPClientHandler(address, rack, slot)
-// 	return NewClient(handler)
-// }
+func TCPClient(address string, rack int, slot int) Client {
+	handler := NewTCPClientHandler(address, rack, slot)
+	return NewClient(handler)
+}
 
-// // TCPClientWithConnectType creator for a TCP client with address, rack, slot and connect type, implement from interface client
-// func TCPClientWithConnectType(address string, rack int, slot int, connectType int) Client {
-// 	handler := NewTCPClientHandlerWithConnectType(address, rack, slot, connectType)
-// 	return NewClient(handler)
-// }
+// TCPClientWithConnectType creator for a TCP client with address, rack, slot and connect type, implement from interface client
+func TCPClientWithConnectType(address string, rack int, slot int, connectType int) Client {
+	handler := NewTCPClientHandlerWithConnectType(address, rack, slot, connectType)
+	return NewClient(handler)
+}
 
 // tcpPackager implements Packager interface.
 type tcpPackager struct {
@@ -212,30 +213,15 @@ func (mb *tcpTransporter) Send(request []byte) (response []byte, err error) {
 // Connect establishes a new connection to the address in Address.
 // Connect and Close are exported so that multiple requests can be done with one session
 func (mb *tcpTransporter) Connect() error {
-	// mb.mu.Lock()
-	// defer mb.mu.Unlock()
+	return mb.ConnectContext(context.Background())
+}
 
-	return mb.connect()
-}
-func (mb *tcpTransporter) tcpConnect() error {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
-	if mb.conn == nil {
-		dialer := net.Dialer{Timeout: mb.Timeout}
-		conn, err := dialer.Dial("tcp", mb.Address)
-		if err != nil {
-			if conn != nil {
-				_ = conn.Close()
-			}
-			return err
-		}
-		mb.conn = conn
-	}
-	return nil
-}
-func (mb *tcpTransporter) connect() error {
+// ConnectContext establishes a new connection to the address in Address.
+// It is the same as Connect but accepts a context that can be used to
+// cancel or set a deadline on the TCP dial and subsequent protocol handshake.
+func (mb *tcpTransporter) ConnectContext(ctx context.Context) error {
 	//first stage: TCP connection
-	err := mb.tcpConnect()
+	err := mb.tcpConnect(ctx)
 	if err != nil {
 		return err
 	}
@@ -249,7 +235,23 @@ func (mb *tcpTransporter) connect() error {
 	}
 	// Third stage : S7 protocol data unit negotiation
 	return mb.negotiatePduLength()
+}
 
+func (mb *tcpTransporter) tcpConnect(ctx context.Context) error {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	if mb.conn == nil {
+		dialer := net.Dialer{Timeout: mb.Timeout}
+		conn, err := dialer.DialContext(ctx, "tcp", mb.Address)
+		if err != nil {
+			if conn != nil {
+				_ = conn.Close()
+			}
+			return err
+		}
+		mb.conn = conn
+	}
+	return nil
 }
 
 func (mb *tcpTransporter) isoConnect() error {
