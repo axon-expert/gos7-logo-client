@@ -63,10 +63,10 @@ const (
 )
 
 type Config struct {
-	Host       string
-	Port       uint16
-	LocalTSAP  TSAP
-	RemoteTSAP TSAP
+	Host       string `json:"host"        yaml:"host"        env:"HOST"`
+	Port       uint16 `json:"port"        yaml:"port"        env:"PORT"`
+	LocalTSAP  TSAP   `json:"local_tsap"  yaml:"local_tsap"  env:"LOCAL_TSAP"`
+	RemoteTSAP TSAP   `json:"remote_tsap" yaml:"remote_tsap" env:"REMOTE_TSAP"`
 }
 
 func NewConfig(host string) Config {

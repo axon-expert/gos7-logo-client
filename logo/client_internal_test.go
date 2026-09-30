@@ -6,16 +6,74 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+const testHost = "192.0.2.1"
 
 func TestNewConfig(t *testing.T) {
 	require.Equal(t, Config{
-		Host:       "192.0.2.1",
+		Host:       testHost,
 		Port:       102,
 		LocalTSAP:  0x1000,
 		RemoteTSAP: 0x2000,
-	}, NewConfig("192.0.2.1"))
+	}, NewConfig(testHost))
+}
+
+func TestConfigUnmarshalJSON(t *testing.T) {
+	var config Config
+	err := json.Unmarshal([]byte(`{
+		"host": "192.0.2.1",
+		"port": 1102,
+		"local_tsap": "10.00",
+		"remote_tsap": 8192
+	}`), &config)
+
+	require.NoError(t, err)
+	require.Equal(t, Config{
+		Host:       testHost,
+		Port:       1102,
+		LocalTSAP:  0x1000,
+		RemoteTSAP: 0x2000,
+	}, config)
+}
+
+func TestConfigUnmarshalYAML(t *testing.T) {
+	var config Config
+	err := yaml.Unmarshal([]byte(`
+host: 192.0.2.1
+port: 1102
+local_tsap: "10.00"
+remote_tsap: 0x2000
+`), &config)
+
+	require.NoError(t, err)
+	require.Equal(t, Config{
+		Host:       testHost,
+		Port:       1102,
+		LocalTSAP:  0x1000,
+		RemoteTSAP: 0x2000,
+	}, config)
+}
+
+func TestConfigReadEnvironment(t *testing.T) {
+	t.Setenv("HOST", testHost)
+	t.Setenv("PORT", "1102")
+	t.Setenv("LOCAL_TSAP", "10.00")
+	t.Setenv("REMOTE_TSAP", "0x2000")
+	var config Config
+
+	err := cleanenv.ReadEnv(&config)
+
+	require.NoError(t, err)
+	require.Equal(t, Config{
+		Host:       testHost,
+		Port:       1102,
+		LocalTSAP:  0x1000,
+		RemoteTSAP: 0x2000,
+	}, config)
 }
 
 func TestNewClientJoinsIPv6HostAndPort(t *testing.T) {
@@ -66,14 +124,14 @@ func TestConnectHonorsCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	client := NewClient(NewConfig("192.0.2.1"))
+	client := NewClient(NewConfig(testHost))
 	err := client.Connect(ctx)
 
 	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestOperationsRequireConnection(t *testing.T) {
-	client := NewClient(NewConfig("192.0.2.1"))
+	client := NewClient(NewConfig(testHost))
 	addr := MustNewVMAddrFromString("V1")
 	tests := []struct {
 		name string
@@ -98,7 +156,7 @@ func TestOperationsRequireConnection(t *testing.T) {
 }
 
 func TestWriteRejectsOutputAddress(t *testing.T) {
-	client := NewClient(NewConfig("192.0.2.1"))
+	client := NewClient(NewConfig(testHost))
 	client.connected.Store(true)
 	addr := MustNewVMAddrFromString("Q1")
 
@@ -112,7 +170,7 @@ func TestWriteRejectsOutputAddress(t *testing.T) {
 }
 
 func TestStreamValidatesArguments(t *testing.T) {
-	client := NewClient(NewConfig("192.0.2.1"))
+	client := NewClient(NewConfig(testHost))
 	addr := MustNewVMAddrFromString("V1")
 
 	_, err := client.Stream(context.Background(), 0, addr)
@@ -126,7 +184,7 @@ func TestStreamValidatesArguments(t *testing.T) {
 }
 
 func TestStreamClosesWhenContextIsCancelled(t *testing.T) {
-	client := NewClient(NewConfig("192.0.2.1"))
+	client := NewClient(NewConfig(testHost))
 	client.connected.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
