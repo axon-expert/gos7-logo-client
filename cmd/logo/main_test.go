@@ -6,6 +6,7 @@ import (
 	"os"
 	"syscall"
 	"testing"
+	"time"
 
 	gos7logo "github.com/axon-expert/gos7-logo-client/logo"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,26 @@ func (c *fakeClient) Connect(context.Context) error {
 
 func (c *fakeClient) Read(addr gos7logo.VmAddr) (uint32, error) {
 	return c.values[addr], nil
+}
+
+func (c *fakeClient) Stream(
+	ctx context.Context,
+	_ time.Duration,
+	addresses ...gos7logo.VmAddr,
+) (<-chan gos7logo.StreamResult, error) {
+	results := make(chan gos7logo.StreamResult, 1)
+	defer close(results)
+	select {
+	case <-ctx.Done():
+		return results, nil
+	default:
+	}
+	values := make(gos7logo.VmAddrValues, len(addresses))
+	for i, addr := range addresses {
+		values[i] = gos7logo.VmAddrValue{VmAddr: addr, Value: c.values[addr]}
+	}
+	results <- gos7logo.StreamResult{Data: values}
+	return results, nil
 }
 
 func (c *fakeClient) Write(addr gos7logo.VmAddr, value uint32) error {
@@ -185,6 +206,19 @@ func TestRunWatchStopsWhenContextIsCancelled(t *testing.T) {
 	var output bytes.Buffer
 
 	err := run(ctx, []string{"watch", "-interval", "1ms", "V1"}, &output, &bytes.Buffer{},
+		func(gos7logo.Config) logoClient { return client })
+
+	require.NoError(t, err)
+	require.Empty(t, output.String())
+}
+
+func TestRunWatchUsesStream(t *testing.T) {
+	client := &fakeClient{values: map[gos7logo.VmAddr]uint32{
+		gos7logo.MustNewVmAddrFromString("V1"): 7,
+	}}
+	var output bytes.Buffer
+
+	err := run(context.Background(), []string{"watch", "V1"}, &output, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)

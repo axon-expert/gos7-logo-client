@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	gos7patch "github.com/axon-expert/gos7-logo-client/gos7-patch"
 )
@@ -12,14 +13,22 @@ import (
 type Client interface {
 	Connect(ctx context.Context) error
 	Read(addr VmAddr) (uint32, error)
-	ReadMany(addrs ...VmAddr) ([]byte, error)
+	ReadMany(addrs ...VmAddr) (VmAddrValues, error)
 	ReadManyTo(buf []byte, addrs ...VmAddr) error
+	Stream(
+		ctx context.Context, interval time.Duration, addrs ...VmAddr,
+	) (<-chan StreamResult, error)
 	Write(addr VmAddr, value uint32) error
 	WriteMany(addrs ...VmAddrValue) error
 	Disconnect() error
 }
 
 var ErrNotConnected = errors.New("client is not connected")
+
+type StreamResult struct {
+	Data VmAddrValues
+	Err  error
+}
 
 var _ Client = &client{}
 
@@ -163,14 +172,11 @@ func (c *client) Read(addr VmAddr) (uint32, error) {
 	return result, nil
 }
 
-func (c *client) ReadMany(args ...VmAddr) ([]byte, error) {
+func (c *client) ReadMany(args ...VmAddr) (VmAddrValues, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
-	if err := c.ensureConnected(); err != nil {
-		return nil, fmt.Errorf("ReadMany: %w", err)
-	}
-	_, size, err := vmAddrRange(args)
+	start, size, err := vmAddrRange(args)
 	if err != nil {
 		return nil, fmt.Errorf("ReadMany: %w", err)
 	}
@@ -179,7 +185,16 @@ func (c *client) ReadMany(args ...VmAddr) ([]byte, error) {
 		return nil, err
 	}
 
-	return buff, nil
+	values := make(VmAddrValues, len(args))
+	for i, addr := range args {
+		offset := int(addr.Byte - start)
+		value, err := c.getIntFromBuffer(addr, buff[offset:])
+		if err != nil {
+			return nil, fmt.Errorf("ReadMany: decode %s: %w", addr, err)
+		}
+		values[i] = VmAddrValue{VmAddr: addr, Value: value}
+	}
+	return values, nil
 }
 
 func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
@@ -200,6 +215,61 @@ func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
 		return err
 	}
 	return nil
+}
+
+func (c *client) Stream(
+	ctx context.Context, interval time.Duration, addrs ...VmAddr,
+) (<-chan StreamResult, error) {
+	if interval <= 0 {
+		return nil, errors.New("stream interval must be greater than zero")
+	}
+	if len(addrs) == 0 {
+		return nil, errors.New("stream addresses are empty")
+	}
+	if err := c.ensureConnected(); err != nil {
+		return nil, fmt.Errorf("stream: %w", err)
+	}
+	if _, _, err := vmAddrRange(addrs); err != nil {
+		return nil, fmt.Errorf("stream: %w", err)
+	}
+
+	streamAddrs := append([]VmAddr(nil), addrs...)
+	results := make(chan StreamResult, 1)
+	go c.stream(ctx, interval, streamAddrs, results)
+	return results, nil
+}
+
+func (c *client) stream(
+	ctx context.Context,
+	interval time.Duration,
+	addrs []VmAddr,
+	results chan<- StreamResult,
+) {
+	defer close(results)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		data, err := c.ReadMany(addrs...)
+		select {
+		case results <- StreamResult{Data: data, Err: err}:
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {

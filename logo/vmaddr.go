@@ -164,6 +164,24 @@ type VmAddrValue struct {
 	Value  uint32
 }
 
+type VmAddrValues []VmAddrValue
+
+func (values VmAddrValues) At(index int) (VmAddrValue, bool) {
+	if index < 0 || index >= len(values) {
+		return VmAddrValue{}, false
+	}
+	return values[index], true
+}
+
+func (values VmAddrValues) Get(addr VmAddr) (uint32, bool) {
+	for _, value := range values {
+		if value.VmAddr == addr {
+			return value.Value, true
+		}
+	}
+	return 0, false
+}
+
 func compareVmAddrByte(lhs, rhs VmAddr) int {
 	return cmp.Compare(lhs.Byte, rhs.Byte)
 }

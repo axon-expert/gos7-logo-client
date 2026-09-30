@@ -36,6 +36,7 @@ Connection options:
 type logoClient interface {
 	Connect(context.Context) error
 	Read(gos7logo.VmAddr) (uint32, error)
+	Stream(context.Context, time.Duration, ...gos7logo.VmAddr) (<-chan gos7logo.StreamResult, error)
 	Write(gos7logo.VmAddr, uint32) error
 	Disconnect() error
 }
@@ -427,37 +428,35 @@ func watchValues(
 	format string,
 	output io.Writer,
 ) error {
-	if err := printSample(client, addresses, format, output); err != nil {
+	stream, err := client.Stream(ctx, interval, addresses...)
+	if err != nil {
 		return err
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			if err := printSample(client, addresses, format, output); err != nil {
-				return err
-			}
+	for result := range stream {
+		if result.Err != nil {
+			return result.Err
+		}
+		if err := printSample(result.Data, format, output); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 func printSample(
-	client logoClient,
-	addresses []gos7logo.VmAddr,
+	values gos7logo.VmAddrValues,
 	format string,
 	output io.Writer,
 ) error {
 	var sample bytes.Buffer
 	_, _ = fmt.Fprint(&sample, time.Now().Format(time.RFC3339))
-	for _, addr := range addresses {
-		value, err := client.Read(addr)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", addr, err)
-		}
-		_, _ = fmt.Fprintf(&sample, " %s=%s", addr, formatValue(addr, value, format))
+	for _, value := range values {
+		_, _ = fmt.Fprintf(
+			&sample,
+			" %s=%s",
+			value.VmAddr,
+			formatValue(value.VmAddr, value.Value, format),
+		)
 	}
 	if err := sample.WriteByte('\n'); err != nil {
 		return fmt.Errorf("build sample: %w", err)

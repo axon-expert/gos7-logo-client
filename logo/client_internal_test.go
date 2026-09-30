@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,32 @@ func TestOperationsRequireConnection(t *testing.T) {
 	}
 }
 
+func TestStreamValidatesArguments(t *testing.T) {
+	client := NewClient(NewConfig("192.0.2.1"))
+	addr := MustNewVmAddrFromString("V1")
+
+	_, err := client.Stream(context.Background(), 0, addr)
+	require.EqualError(t, err, "stream interval must be greater than zero")
+	_, err = client.Stream(context.Background(), time.Second, addr)
+	require.ErrorIs(t, err, ErrNotConnected)
+
+	client.connected.Store(true)
+	_, err = client.Stream(context.Background(), time.Second)
+	require.EqualError(t, err, "stream addresses are empty")
+}
+
+func TestStreamClosesWhenContextIsCancelled(t *testing.T) {
+	client := NewClient(NewConfig("192.0.2.1"))
+	client.connected.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	results, err := client.Stream(ctx, time.Second, MustNewVmAddrFromString("V1"))
+	require.NoError(t, err)
+	_, open := <-results
+	require.False(t, open)
+}
+
 func TestVmAddrConstructors(t *testing.T) {
 	addr, err := NewVmAddr(Bit, 12, 7)
 	require.NoError(t, err)
@@ -145,4 +172,27 @@ func TestVmAddrComparators(t *testing.T) {
 	require.Negative(t, compareVmAddrByte(VmAddr{Byte: 1}, VmAddr{Byte: 2}))
 	require.Zero(t, compareVmAddrByte(VmAddr{Byte: 2}, VmAddr{Byte: 2}))
 	require.Positive(t, compareVmAddrByte(VmAddr{Byte: 2}, VmAddr{Byte: 1}))
+}
+
+func TestVmAddrValuesAccessors(t *testing.T) {
+	addr1 := MustNewVmAddrFromString("V1")
+	addr2 := MustNewVmAddrFromString("VW2")
+	values := VmAddrValues{
+		{VmAddr: addr1, Value: 10},
+		{VmAddr: addr2, Value: 20},
+	}
+
+	value, ok := values.At(1)
+	require.True(t, ok)
+	require.Equal(t, VmAddrValue{VmAddr: addr2, Value: 20}, value)
+	_, ok = values.At(-1)
+	require.False(t, ok)
+	_, ok = values.At(len(values))
+	require.False(t, ok)
+
+	actual, ok := values.Get(addr1)
+	require.True(t, ok)
+	require.Equal(t, uint32(10), actual)
+	_, ok = values.Get(MustNewVmAddrFromString("V3"))
+	require.False(t, ok)
 }

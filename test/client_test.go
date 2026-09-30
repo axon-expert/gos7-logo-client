@@ -115,13 +115,11 @@ func TestClientReadMany(t *testing.T) {
 	}
 
 	res, err := client.ReadMany(addr1, addr2, addr3)
-	require.Equal(t, 2, len(res))
-	if err != nil {
-		t.Fatal(err)
-	}
-	require.Equal(t, 123, int(res[0]))
-	require.True(t, (res[1]&(1<<addr2.Bit)) != 0)
-	require.True(t, (res[1]&(1<<addr3.Bit)) == 0)
+	require.NoError(t, err)
+	require.Len(t, res, 3)
+	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr1, Value: 123}, res[0])
+	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr2, Value: 1}, res[1])
+	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr3, Value: 0}, res[2])
 }
 
 func writeReadTest(t *testing.T, vmAddr string, value uint32) {
