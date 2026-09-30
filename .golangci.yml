@@ -46,7 +46,7 @@ formatters:
       tab-len: 4
   exclusions:
     paths:
-      - "gos7-patch/.*"
+      # - "gos7-patch/.*"
 
 output:
   formats:

@@ -46,7 +46,8 @@ func (mb *client) AGWriteMulti(dataItems []S7DataItem, itemsCount int) (err erro
 
 		// Adjusts the offset
 		var addr int
-		if dataItems[i].WordLen == s7wlbit || dataItems[i].WordLen == s7wlcounter || dataItems[i].WordLen == s7wltimer {
+		if dataItems[i].WordLen == s7wlbit || dataItems[i].WordLen == s7wlcounter ||
+			dataItems[i].WordLen == s7wltimer {
 			addr = dataItems[i].Start
 		} else {
 			addr = dataItems[i].Start * 8
@@ -121,7 +122,10 @@ func (mb *client) AGWriteMulti(dataItems []S7DataItem, itemsCount int) (err erro
 			err = fmt.Errorf(ErrorText(cpuErr))
 			return
 		}
-		if itemsWritten := int(response.Data[20]); itemsWritten != itemsCount || itemsWritten > 20 { //max var = 20
+		if itemsWritten := int(
+			response.Data[20],
+		); itemsWritten != itemsCount ||
+			itemsWritten > 20 { //max var = 20
 			err = fmt.Errorf(ErrorText(errCliInvalidPlcAnswer))
 			return
 		}

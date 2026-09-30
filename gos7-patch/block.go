@@ -112,5 +112,7 @@ func (mb *client) GetAgBlockInfo(blocktype int, blocknum int) (info S7BlockInfo,
 
 // siemensTimestamp helper get Siemens timestamp
 func siemensTimestamp(EncodedDate int64) string {
-	return time.Date(1984, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration((EncodedDate * 86400))).Format("02.01.2006")
+	return time.Date(1984, 1, 1, 0, 0, 0, 0, time.UTC).
+		Add(time.Second * time.Duration((EncodedDate * 86400))).
+		Format("02.01.2006")
 }

@@ -108,7 +108,9 @@ func (s7 *Helper) SetDateTimeAt(buffer []byte, pos int, value time.Time) {
 	buffer[pos+4] = encodeBcd(mi)
 	buffer[pos+5] = encodeBcd(s)
 	buffer[pos+6] = encodeBcd(value.Nanosecond() / 1000000 / 10)
-	buffer[pos+7] = (encodeBcd(value.Nanosecond()/1000000%10) << 4) | encodeBcd(int(value.Weekday()))
+	buffer[pos+7] = (encodeBcd(value.Nanosecond()/1000000%10) << 4) | encodeBcd(
+		int(value.Weekday()),
+	)
 }
 
 // GetDateAt DATE (S7 DATE)
@@ -172,7 +174,16 @@ func (s7 *Helper) GetDTLAt(buffer []byte, pos int) time.Time {
 	var nanos int32
 	s7.GetValueAt(buffer, pos+0, &year)
 	s7.GetValueAt(buffer, pos+8, &nanos)
-	return time.Date(int(year), time.Month(int(buffer[pos+2])), int(buffer[pos+3]), int(buffer[pos+5]), int(buffer[pos+6]), int(buffer[pos+7]), int(nanos), time.UTC)
+	return time.Date(
+		int(year),
+		time.Month(int(buffer[pos+2])),
+		int(buffer[pos+3]),
+		int(buffer[pos+5]),
+		int(buffer[pos+6]),
+		int(buffer[pos+7]),
+		int(nanos),
+		time.UTC,
+	)
 }
 
 // SetDTLAt DTL (S71200/1500 Date and Time)

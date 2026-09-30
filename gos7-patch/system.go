@@ -148,7 +148,9 @@ func (mb *client) readSzl(id int, index int) (szl S7SZL, size int, err error) {
 		}
 		if first {
 			// Gets Amount of this slice
-			dataSZL = int(binary.BigEndian.Uint16(res.Data[31:])) - 8 // Skips extra params (ID, Index ...)
+			dataSZL = int(
+				binary.BigEndian.Uint16(res.Data[31:]),
+			) - 8 // Skips extra params (ID, Index ...)
 			done = res.Data[26] == 0x00
 			seqIn = byte(res.Data[24]) // Slice sequence
 			//header

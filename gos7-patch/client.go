@@ -158,7 +158,14 @@ func (mb *client) AGWriteCT(start int, amount int, buffer []byte) (err error) {
 }
 
 // read generic area, pass result into a buffer
-func (mb *client) readArea(area int, dbNumber int, start int, amount int, wordLen int, buffer []byte) (err error) {
+func (mb *client) readArea(
+	area int,
+	dbNumber int,
+	start int,
+	amount int,
+	wordLen int,
+	buffer []byte,
+) (err error) {
 	var address, numElements, maxElements, totElements, sizeRequested int
 	offset := 0
 	wordSize := 1
@@ -255,7 +262,14 @@ func (mb *client) readArea(area int, dbNumber int, start int, amount int, wordLe
 // 4.amount: amount of the address
 // 5.wordlen: bit/byte/word/dword/real/counter/timer
 // 6.buffer: a byte array input for writing
-func (mb *client) writeArea(area int, dbnumber int, start int, amount int, wordlen int, buffer []byte) (err error) {
+func (mb *client) writeArea(
+	area int,
+	dbnumber int,
+	start int,
+	amount int,
+	wordlen int,
+	buffer []byte,
+) (err error) {
 	var address, numElements, maxElements, totElements, dataSize, isoSize, length int
 	offset := 0
 	wordSize := 1
@@ -352,7 +366,9 @@ func (mb *client) writeArea(area int, dbnumber int, start int, amount int, wordl
 		binary.BigEndian.PutUint16(request.Data[33:], uint16(length))
 
 		//expand values into array
-		request.Data = append(request.Data[:35], append(buffer[offset:offset+dataSize], request.Data[35:]...)...)
+		request.Data = append(
+			request.Data[:35],
+			append(buffer[offset:offset+dataSize], request.Data[35:]...)...)
 		response, sendError := mb.send(&request)
 		err = sendError
 		if err == nil {

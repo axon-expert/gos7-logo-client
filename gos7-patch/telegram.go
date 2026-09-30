@@ -135,19 +135,79 @@ var s7SZLNextTelegram = []byte{
 
 // Get Date/Time request
 var s7GetDatetimeTelegram = []byte{
-	3, 0, 0, 29, 2, 240, 128, 50, 7, 0, 0, 56, 0, 0, 8, 0, 4, 0, 1, 18, 4, 17, 71, 1, 0, 10, 0, 0, 0}
+	3,
+	0,
+	0,
+	29,
+	2,
+	240,
+	128,
+	50,
+	7,
+	0,
+	0,
+	56,
+	0,
+	0,
+	8,
+	0,
+	4,
+	0,
+	1,
+	18,
+	4,
+	17,
+	71,
+	1,
+	0,
+	10,
+	0,
+	0,
+	0,
+}
 
 // Set Date/Time command
 var s7SetDatetimeTelegram = []byte{
-	3, 0, 0, 39, 2, 240, 128, 50, 7, 0, 0, 137, 3, 0, 8, 0, 14, 0, 1, 18, 4, 17, 71, 2, 0, 255, 9, 0, 10, 0,
-	25,   // Hi part of Year (idx=30)
-	19,   // Lo part of Year
-	18,   // Month
-	6,    // Day
-	23,   // Hour
-	55,   // Min
-	19,   // Sec
-	0, 1} // ms + Day of week
+	3,
+	0,
+	0,
+	39,
+	2,
+	240,
+	128,
+	50,
+	7,
+	0,
+	0,
+	137,
+	3,
+	0,
+	8,
+	0,
+	14,
+	0,
+	1,
+	18,
+	4,
+	17,
+	71,
+	2,
+	0,
+	255,
+	9,
+	0,
+	10,
+	0,
+	25, // Hi part of Year (idx=30)
+	19, // Lo part of Year
+	18, // Month
+	6,  // Day
+	23, // Hour
+	55, // Min
+	19, // Sec
+	0,
+	1,
+} // ms + Day of week
 
 // S7 Set Session Password
 var s7SetPWDTelegram = []byte{
@@ -157,7 +217,36 @@ var s7SetPWDTelegram = []byte{
 
 // S7 Clear Session Password
 var s7ClearPWDTelegram = []byte{
-	3, 0, 0, 29, 2, 240, 128, 50, 7, 0, 0, 41, 0, 0, 8, 0, 4, 0, 1, 18, 4, 17, 69, 2, 0, 10, 0, 0, 0}
+	3,
+	0,
+	0,
+	29,
+	2,
+	240,
+	128,
+	50,
+	7,
+	0,
+	0,
+	41,
+	0,
+	0,
+	8,
+	0,
+	4,
+	0,
+	1,
+	18,
+	4,
+	17,
+	69,
+	2,
+	0,
+	10,
+	0,
+	0,
+	0,
+}
 
 // S7 STOP request
 var s7StopTelegram = []byte{
@@ -196,7 +285,37 @@ var s7BlockInfoTelegram = []byte{
 
 // s7 pg block list telegram, require type to the end
 var s7PGBlockListTelegram = []byte{
-	3, 0, 0, 31, 2, 240, 128, 50, 7, 0, 0, 5, 0, 0, 8, 0, 6, 0, 1, 18, 4, 17, 67, 2, 0, 255, 9, 0, 2, 48}
+	3,
+	0,
+	0,
+	31,
+	2,
+	240,
+	128,
+	50,
+	7,
+	0,
+	0,
+	5,
+	0,
+	0,
+	8,
+	0,
+	6,
+	0,
+	1,
+	18,
+	4,
+	17,
+	67,
+	2,
+	0,
+	255,
+	9,
+	0,
+	2,
+	48,
+}
 
 var s7PGBlockDeleteTelegram = []byte{
 	50, 1, 0, 0, 107, 0, 0, 26, 0, 0, 40, 0, 0, 0, 0, 0, 0, 253, 0, 10, 1, 0, 48,

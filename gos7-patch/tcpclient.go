@@ -50,7 +50,12 @@ func NewTCPClientHandler(address string, rack int, slot int) *TCPClientHandler {
 }
 
 // NewTCPClientHandlerWithConnectType allocates a new TCPClientHandler with connection type.
-func NewTCPClientHandlerWithConnectType(address string, rack int, slot int, connectType int) *TCPClientHandler {
+func NewTCPClientHandlerWithConnectType(
+	address string,
+	rack int,
+	slot int,
+	connectType int,
+) *TCPClientHandler {
 	h := &TCPClientHandler{}
 	h.Address = address
 	h.Timeout = tcpTimeout
@@ -62,7 +67,12 @@ func NewTCPClientHandlerWithConnectType(address string, rack int, slot int, conn
 }
 
 // NewTCPClientHandlerWithTSAP allocates a new TCPClientHandler with TSAP.
-func NewTCPClientHandlerWithTSAP(address string, rack int, slot int, localTSAP, remoteTSAP uint16) *TCPClientHandler {
+func NewTCPClientHandlerWithTSAP(
+	address string,
+	rack int,
+	slot int,
+	localTSAP, remoteTSAP uint16,
+) *TCPClientHandler {
 	h := &TCPClientHandler{}
 	h.Address = address
 	h.Timeout = tcpTimeout
@@ -117,7 +127,11 @@ type tcpTransporter struct {
 	PDULength int
 }
 
-func (mb *tcpTransporter) setConnectionParameters(address string, localTSAP uint16, remoteTSAP uint16) {
+func (mb *tcpTransporter) setConnectionParameters(
+	address string,
+	localTSAP uint16,
+	remoteTSAP uint16,
+) {
 	locTSAP := localTSAP & 0x0000FFFF
 	remTSAP := remoteTSAP & 0x0000FFFF
 	if len(strings.Split(address, ":")) < 2 {
