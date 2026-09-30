@@ -1,0 +1,13 @@
+fail_fast: true
+default_install_hook_types: [pre-push]
+repos:
+  - repo: local
+    hooks:
+      - id: system
+        name: format-lint
+        entry: |
+          make format-lint
+        pass_filenames: false
+        types_or:
+          - go
+        language: unsupported
