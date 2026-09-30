@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,7 @@ type client struct {
 	area      string
 	dbNumber  int
 	connected atomic.Bool
+	writeMu   sync.Mutex
 }
 
 func NewClient(config Config) *client {
@@ -72,6 +74,9 @@ func (c *client) ensureConnected() error {
 }
 
 func (c *client) Write(addr VMAddr, value uint32) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	if err := c.ensureConnected(); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -98,6 +103,9 @@ func (c *client) Write(addr VMAddr, value uint32) error {
 }
 
 func (c *client) WriteMany(args ...VMAddrValue) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	if len(args) == 0 {
 		return fmt.Errorf("failed `WriteMany`: args is empty")
 	}
