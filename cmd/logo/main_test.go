@@ -19,7 +19,7 @@ const (
 )
 
 type fakeClient struct {
-	values map[gos7logo.VmAddr]uint32
+	values map[gos7logo.VMAddr]uint32
 	closed bool
 }
 
@@ -27,14 +27,14 @@ func (c *fakeClient) Connect(context.Context) error {
 	return nil
 }
 
-func (c *fakeClient) Read(addr gos7logo.VmAddr) (uint32, error) {
+func (c *fakeClient) Read(addr gos7logo.VMAddr) (uint32, error) {
 	return c.values[addr], nil
 }
 
 func (c *fakeClient) Stream(
 	ctx context.Context,
 	_ time.Duration,
-	addresses ...gos7logo.VmAddr,
+	addresses ...gos7logo.VMAddr,
 ) (<-chan gos7logo.StreamResult, error) {
 	results := make(chan gos7logo.StreamResult, 1)
 	defer close(results)
@@ -43,15 +43,15 @@ func (c *fakeClient) Stream(
 		return results, nil
 	default:
 	}
-	values := make(gos7logo.VmAddrValues, len(addresses))
+	values := make(gos7logo.VMAddrValues, len(addresses))
 	for i, addr := range addresses {
-		values[i] = gos7logo.VmAddrValue{VmAddr: addr, Value: c.values[addr]}
+		values[i] = gos7logo.VMAddrValue{VMAddr: addr, Value: c.values[addr]}
 	}
 	results <- gos7logo.StreamResult{Data: values}
 	return results, nil
 }
 
-func (c *fakeClient) Write(addr gos7logo.VmAddr, value uint32) error {
+func (c *fakeClient) Write(addr gos7logo.VMAddr, value uint32) error {
 	c.values[addr] = value
 	return nil
 }
@@ -62,8 +62,8 @@ func (c *fakeClient) Disconnect() error {
 }
 
 func TestRunRead(t *testing.T) {
-	addr := gos7logo.MustNewVmAddrFromString(addressVW4)
-	client := &fakeClient{values: map[gos7logo.VmAddr]uint32{addr: 42}}
+	addr := gos7logo.MustNewVMAddrFromString(addressVW4)
+	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{addr: 42}}
 	var output bytes.Buffer
 
 	err := run(context.Background(), []string{commandRead, addressVW4}, &output, &bytes.Buffer{},
@@ -75,10 +75,10 @@ func TestRunRead(t *testing.T) {
 }
 
 func TestRunReadRange(t *testing.T) {
-	client := &fakeClient{values: map[gos7logo.VmAddr]uint32{
-		gos7logo.MustNewVmAddrFromString("V3"): 3,
-		gos7logo.MustNewVmAddrFromString("V4"): 4,
-		gos7logo.MustNewVmAddrFromString("V5"): 5,
+	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
+		gos7logo.MustNewVMAddrFromString("V3"): 3,
+		gos7logo.MustNewVMAddrFromString("V4"): 4,
+		gos7logo.MustNewVMAddrFromString("V5"): 5,
 	}}
 	var output bytes.Buffer
 
@@ -123,7 +123,7 @@ func TestParseAddressRangeRejectsInvalidEndpoints(t *testing.T) {
 }
 
 func TestRunReadFormatsValue(t *testing.T) {
-	addr := gos7logo.MustNewVmAddrFromString(addressVW4)
+	addr := gos7logo.MustNewVMAddrFromString(addressVW4)
 	tests := []struct {
 		format string
 		want   string
@@ -141,7 +141,7 @@ func TestRunReadFormatsValue(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.format, func(t *testing.T) {
-			client := &fakeClient{values: map[gos7logo.VmAddr]uint32{addr: 42}}
+			client := &fakeClient{values: map[gos7logo.VMAddr]uint32{addr: 42}}
 			var output bytes.Buffer
 
 			err := run(context.Background(), []string{"-f", test.format, commandRead, addressVW4},
@@ -154,12 +154,12 @@ func TestRunReadFormatsValue(t *testing.T) {
 }
 
 func TestFormatValueGroupsDecimalFromRight(t *testing.T) {
-	addr := gos7logo.MustNewVmAddrFromString("VD4")
+	addr := gos7logo.MustNewVMAddrFromString("VD4")
 	require.Equal(t, "123_456", formatValue(addr, 123456, "d_"))
 }
 
 func TestRunWrite(t *testing.T) {
-	client := &fakeClient{values: make(map[gos7logo.VmAddr]uint32)}
+	client := &fakeClient{values: make(map[gos7logo.VMAddr]uint32)}
 	var output bytes.Buffer
 
 	err := run(context.Background(), []string{commandWrite, "V3", "0xff", "V4.2", "1"},
@@ -167,8 +167,8 @@ func TestRunWrite(t *testing.T) {
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
-	require.Equal(t, uint32(255), client.values[gos7logo.MustNewVmAddrFromString("V3")])
-	require.Equal(t, uint32(1), client.values[gos7logo.MustNewVmAddrFromString("V4.2")])
+	require.Equal(t, uint32(255), client.values[gos7logo.MustNewVMAddrFromString("V3")])
+	require.Equal(t, uint32(1), client.values[gos7logo.MustNewVMAddrFromString("V4.2")])
 	require.Equal(t, "V3=255\nV4.2=1\n", output.String())
 }
 
@@ -215,8 +215,8 @@ func TestRunRejectsInvalidOutputFormatBeforeConnecting(t *testing.T) {
 func TestRunWatchStopsWhenContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	client := &fakeClient{values: map[gos7logo.VmAddr]uint32{
-		gos7logo.MustNewVmAddrFromString("V1"): 7,
+	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
+		gos7logo.MustNewVMAddrFromString("V1"): 7,
 	}}
 	var output bytes.Buffer
 
@@ -228,8 +228,8 @@ func TestRunWatchStopsWhenContextIsCancelled(t *testing.T) {
 }
 
 func TestRunWatchUsesStream(t *testing.T) {
-	client := &fakeClient{values: map[gos7logo.VmAddr]uint32{
-		gos7logo.MustNewVmAddrFromString("V1"): 7,
+	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
+		gos7logo.MustNewVMAddrFromString("V1"): 7,
 	}}
 	var output bytes.Buffer
 

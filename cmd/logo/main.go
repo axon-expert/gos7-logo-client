@@ -36,9 +36,9 @@ Connection options:
 
 type logoClient interface {
 	Connect(context.Context) error
-	Read(gos7logo.VmAddr) (uint32, error)
-	Stream(context.Context, time.Duration, ...gos7logo.VmAddr) (<-chan gos7logo.StreamResult, error)
-	Write(gos7logo.VmAddr, uint32) error
+	Read(gos7logo.VMAddr) (uint32, error)
+	Stream(context.Context, time.Duration, ...gos7logo.VMAddr) (<-chan gos7logo.StreamResult, error)
+	Write(gos7logo.VMAddr, uint32) error
 	Disconnect() error
 }
 
@@ -149,7 +149,7 @@ func run(
 	}
 	command := options.Arg(0)
 	commandArgs := options.Args()[1:]
-	var addresses []gos7logo.VmAddr
+	var addresses []gos7logo.VMAddr
 	var values []uint32
 	interval := time.Second
 
@@ -203,11 +203,11 @@ func run(
 	}
 }
 
-func parseAddresses(args []string) ([]gos7logo.VmAddr, error) {
+func parseAddresses(args []string) ([]gos7logo.VMAddr, error) {
 	if len(args) == 0 {
 		return nil, errors.New("at least one address is required")
 	}
-	addresses := make([]gos7logo.VmAddr, 0, len(args))
+	addresses := make([]gos7logo.VMAddr, 0, len(args))
 	for _, raw := range args {
 		expanded, err := parseAddressOrRange(raw)
 		if err != nil {
@@ -218,16 +218,16 @@ func parseAddresses(args []string) ([]gos7logo.VmAddr, error) {
 	return addresses, nil
 }
 
-func parseAddressOrRange(raw string) ([]gos7logo.VmAddr, error) {
+func parseAddressOrRange(raw string) ([]gos7logo.VMAddr, error) {
 	startRaw, endRaw, isRange := strings.Cut(raw, "-")
-	start, err := gos7logo.NewVmAddrFromString(startRaw)
+	start, err := gos7logo.NewVMAddrFromString(startRaw)
 	if err != nil {
 		return nil, err
 	}
 	if !isRange {
-		return []gos7logo.VmAddr{start}, nil
+		return []gos7logo.VMAddr{start}, nil
 	}
-	end, err := gos7logo.NewVmAddrFromString(endRaw)
+	end, err := gos7logo.NewVMAddrFromString(endRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func parseAddressOrRange(raw string) ([]gos7logo.VmAddr, error) {
 	return expandAddressRange(start, end)
 }
 
-func expandAddressRange(start, end gos7logo.VmAddr) ([]gos7logo.VmAddr, error) {
+func expandAddressRange(start, end gos7logo.VMAddr) ([]gos7logo.VMAddr, error) {
 	const maxRangeLength = 1 << 20
 
 	startIndex := uint64(start.Byte)
@@ -254,7 +254,7 @@ func expandAddressRange(start, end gos7logo.VmAddr) ([]gos7logo.VmAddr, error) {
 		return nil, fmt.Errorf("range contains %d addresses; maximum is %d", length, maxRangeLength)
 	}
 
-	addresses := make([]gos7logo.VmAddr, int(length))
+	addresses := make([]gos7logo.VMAddr, int(length))
 	for i := range addresses {
 		index := startIndex + uint64(i)
 		byteAddr := uint32(index)
@@ -263,19 +263,19 @@ func expandAddressRange(start, end gos7logo.VmAddr) ([]gos7logo.VmAddr, error) {
 			byteAddr = uint32(index / 8)
 			bit = uint8(index % 8)
 		}
-		addresses[i] = gos7logo.MustNewVmAddr(start.Type, byteAddr, bit)
+		addresses[i] = gos7logo.MustNewVMAddr(start.Type, byteAddr, bit)
 	}
 	return addresses, nil
 }
 
-func parseWrites(args []string) ([]gos7logo.VmAddr, []uint32, error) {
+func parseWrites(args []string) ([]gos7logo.VMAddr, []uint32, error) {
 	if len(args) == 0 || len(args)%2 != 0 {
 		return nil, nil, errors.New("write requires ADDRESS VALUE pairs")
 	}
-	addresses := make([]gos7logo.VmAddr, 0, len(args)/2)
+	addresses := make([]gos7logo.VMAddr, 0, len(args)/2)
 	values := make([]uint32, 0, len(args)/2)
 	for i := 0; i < len(args); i += 2 {
-		addr, err := gos7logo.NewVmAddrFromString(args[i])
+		addr, err := gos7logo.NewVMAddrFromString(args[i])
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid address %q: %w", args[i], err)
 		}
@@ -295,7 +295,7 @@ func parseWrites(args []string) ([]gos7logo.VmAddr, []uint32, error) {
 	return addresses, values, nil
 }
 
-func validateValue(addr gos7logo.VmAddr, value uint32) error {
+func validateValue(addr gos7logo.VMAddr, value uint32) error {
 	switch addr.Type {
 	case gos7logo.Bit, gos7logo.Output:
 		if value > 1 {
@@ -332,7 +332,7 @@ func validateOutputFormat(format string) error {
 	}
 }
 
-func formatValue(addr gos7logo.VmAddr, value uint32, format string) string {
+func formatValue(addr gos7logo.VMAddr, value uint32, format string) string {
 	grouped := strings.HasSuffix(format, "_")
 	format = strings.TrimSuffix(format, "_")
 	base := 10
@@ -380,7 +380,7 @@ func groupDigits(value string, size int) string {
 
 func readValues(
 	client logoClient,
-	addresses []gos7logo.VmAddr,
+	addresses []gos7logo.VMAddr,
 	format string,
 	output io.Writer,
 ) error {
@@ -403,7 +403,7 @@ func readValues(
 
 func writeValues(
 	client logoClient,
-	addresses []gos7logo.VmAddr,
+	addresses []gos7logo.VMAddr,
 	values []uint32,
 	format string,
 	output io.Writer,
@@ -427,7 +427,7 @@ func writeValues(
 func watchValues(
 	ctx context.Context,
 	client logoClient,
-	addresses []gos7logo.VmAddr,
+	addresses []gos7logo.VMAddr,
 	interval time.Duration,
 	format string,
 	output io.Writer,
@@ -448,7 +448,7 @@ func watchValues(
 }
 
 func printSample(
-	values gos7logo.VmAddrValues,
+	values gos7logo.VMAddrValues,
 	format string,
 	output io.Writer,
 ) error {
@@ -458,8 +458,8 @@ func printSample(
 		_, _ = fmt.Fprintf(
 			&sample,
 			" %s=%s",
-			value.VmAddr,
-			formatValue(value.VmAddr, value.Value, format),
+			value.VMAddr,
+			formatValue(value.VMAddr, value.Value, format),
 		)
 	}
 	if err := sample.WriteByte('\n'); err != nil {

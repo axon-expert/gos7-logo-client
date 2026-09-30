@@ -16,7 +16,7 @@ if err := client.Connect(context.Background()); err != nil { ... }
 defer client.Disconnect()
 
 value := uint32(100)
-vmAddr, err := gos7logo.NewVmAddrFromString("V94")
+vmAddr, err := gos7logo.NewVMAddrFromString("V94")
 if err != nil { ... }
 
 // Write a value.

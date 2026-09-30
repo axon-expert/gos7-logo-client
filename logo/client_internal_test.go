@@ -74,7 +74,7 @@ func TestConnectHonorsCancelledContext(t *testing.T) {
 
 func TestOperationsRequireConnection(t *testing.T) {
 	client := NewClient(NewConfig("192.0.2.1"))
-	addr := MustNewVmAddrFromString("V1")
+	addr := MustNewVMAddrFromString("V1")
 	tests := []struct {
 		name string
 		run  func() error
@@ -87,7 +87,7 @@ func TestOperationsRequireConnection(t *testing.T) {
 		},
 		{name: "write", run: func() error { return client.Write(addr, 1) }},
 		{name: "write many", run: func() error {
-			return client.WriteMany(VmAddrValue{VmAddr: addr, Value: 1})
+			return client.WriteMany(VMAddrValue{VMAddr: addr, Value: 1})
 		}},
 	}
 	for _, test := range tests {
@@ -100,20 +100,20 @@ func TestOperationsRequireConnection(t *testing.T) {
 func TestWriteRejectsOutputAddress(t *testing.T) {
 	client := NewClient(NewConfig("192.0.2.1"))
 	client.connected.Store(true)
-	addr := MustNewVmAddrFromString("Q1")
+	addr := MustNewVMAddrFromString("Q1")
 
 	err := client.Write(addr, 1)
 	require.ErrorIs(t, err, ErrReadOnlyAddress)
 	require.EqualError(t, err, "write Q1: address is read-only")
 
-	err = client.WriteMany(VmAddrValue{VmAddr: addr, Value: 1})
+	err = client.WriteMany(VMAddrValue{VMAddr: addr, Value: 1})
 	require.ErrorIs(t, err, ErrReadOnlyAddress)
 	require.EqualError(t, err, "WriteMany: Q1: address is read-only")
 }
 
 func TestStreamValidatesArguments(t *testing.T) {
 	client := NewClient(NewConfig("192.0.2.1"))
-	addr := MustNewVmAddrFromString("V1")
+	addr := MustNewVMAddrFromString("V1")
 
 	_, err := client.Stream(context.Background(), 0, addr)
 	require.EqualError(t, err, "stream interval must be greater than zero")
@@ -131,33 +131,33 @@ func TestStreamClosesWhenContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	results, err := client.Stream(ctx, time.Second, MustNewVmAddrFromString("V1"))
+	results, err := client.Stream(ctx, time.Second, MustNewVMAddrFromString("V1"))
 	require.NoError(t, err)
 	_, open := <-results
 	require.False(t, open)
 }
 
-func TestVmAddrConstructors(t *testing.T) {
-	addr, err := NewVmAddr(Bit, 12, 7)
+func TestVMAddrConstructors(t *testing.T) {
+	addr, err := NewVMAddr(Bit, 12, 7)
 	require.NoError(t, err)
-	require.Equal(t, VmAddr{Type: Bit, Byte: 12, Bit: 7}, addr)
+	require.Equal(t, VMAddr{Type: Bit, Byte: 12, Bit: 7}, addr)
 
-	_, err = NewVmAddr(Bit, 12, 8)
+	_, err = NewVMAddr(Bit, 12, 8)
 	require.Error(t, err)
-	_, err = NewVmAddr(Word, 12, 1)
+	_, err = NewVMAddr(Word, 12, 1)
 	require.Error(t, err)
-	_, err = NewVmAddr(DataType(100), 12, 0)
+	_, err = NewVMAddr(DataType(100), 12, 0)
 	require.Error(t, err)
 
 	require.Panics(t, func() {
-		MustNewVmAddr(Bit, 12, 8)
+		MustNewVMAddr(Bit, 12, 8)
 	})
 	require.Panics(t, func() {
-		MustNewVmAddrFromString("V1.8")
+		MustNewVMAddrFromString("V1.8")
 	})
 }
 
-func TestVmAddrUnmarshalRejectsMalformedInput(t *testing.T) {
+func TestVMAddrUnmarshalRejectsMalformedInput(t *testing.T) {
 	for _, input := range []string{
 		"prefixV12",
 		"V1.8",
@@ -168,7 +168,7 @@ func TestVmAddrUnmarshalRejectsMalformedInput(t *testing.T) {
 		"Q1.0",
 	} {
 		t.Run(input, func(t *testing.T) {
-			var addr VmAddr
+			var addr VMAddr
 			require.Error(t, addr.UnmarshalText([]byte(input)))
 		})
 	}
@@ -177,16 +177,16 @@ func TestVmAddrUnmarshalRejectsMalformedInput(t *testing.T) {
 func TestOutputAddresses(t *testing.T) {
 	tests := []struct {
 		input string
-		want  VmAddr
+		want  VMAddr
 	}{
-		{input: "Q1", want: VmAddr{Type: Output, Byte: 1064, Bit: 0}},
-		{input: "Q8", want: VmAddr{Type: Output, Byte: 1064, Bit: 7}},
-		{input: "Q9", want: VmAddr{Type: Output, Byte: 1065, Bit: 0}},
-		{input: "Q64", want: VmAddr{Type: Output, Byte: 1071, Bit: 7}},
+		{input: "Q1", want: VMAddr{Type: Output, Byte: 1064, Bit: 0}},
+		{input: "Q8", want: VMAddr{Type: Output, Byte: 1064, Bit: 7}},
+		{input: "Q9", want: VMAddr{Type: Output, Byte: 1065, Bit: 0}},
+		{input: "Q64", want: VMAddr{Type: Output, Byte: 1071, Bit: 7}},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
-			addr, err := NewVmAddrFromString(test.input)
+			addr, err := NewVMAddrFromString(test.input)
 			require.NoError(t, err)
 			require.Equal(t, test.want, addr)
 			require.Equal(t, test.input, addr.String())
@@ -194,34 +194,34 @@ func TestOutputAddresses(t *testing.T) {
 	}
 }
 
-func TestVmAddrRangeUsesAddressEnd(t *testing.T) {
-	start, size, err := vmAddrRange([]VmAddr{
-		MustNewVmAddr(Byte, 12, 0),
-		MustNewVmAddr(DWord, 10, 0),
-		MustNewVmAddr(Word, 2, 0),
+func TestVMAddrRangeUsesAddressEnd(t *testing.T) {
+	start, size, err := vmAddrRange([]VMAddr{
+		MustNewVMAddr(Byte, 12, 0),
+		MustNewVMAddr(DWord, 10, 0),
+		MustNewVMAddr(Word, 2, 0),
 	})
 	require.NoError(t, err)
 	require.Equal(t, uint32(2), start)
 	require.Equal(t, 12, size)
 }
 
-func TestVmAddrComparators(t *testing.T) {
-	require.Negative(t, compareVmAddrByte(VmAddr{Byte: 1}, VmAddr{Byte: 2}))
-	require.Zero(t, compareVmAddrByte(VmAddr{Byte: 2}, VmAddr{Byte: 2}))
-	require.Positive(t, compareVmAddrByte(VmAddr{Byte: 2}, VmAddr{Byte: 1}))
+func TestVMAddrComparators(t *testing.T) {
+	require.Negative(t, compareVMAddrByte(VMAddr{Byte: 1}, VMAddr{Byte: 2}))
+	require.Zero(t, compareVMAddrByte(VMAddr{Byte: 2}, VMAddr{Byte: 2}))
+	require.Positive(t, compareVMAddrByte(VMAddr{Byte: 2}, VMAddr{Byte: 1}))
 }
 
-func TestVmAddrValuesAccessors(t *testing.T) {
-	addr1 := MustNewVmAddrFromString("V1")
-	addr2 := MustNewVmAddrFromString("VW2")
-	values := VmAddrValues{
-		{VmAddr: addr1, Value: 10},
-		{VmAddr: addr2, Value: 20},
+func TestVMAddrValuesAccessors(t *testing.T) {
+	addr1 := MustNewVMAddrFromString("V1")
+	addr2 := MustNewVMAddrFromString("VW2")
+	values := VMAddrValues{
+		{VMAddr: addr1, Value: 10},
+		{VMAddr: addr2, Value: 20},
 	}
 
 	value, ok := values.At(1)
 	require.True(t, ok)
-	require.Equal(t, VmAddrValue{VmAddr: addr2, Value: 20}, value)
+	require.Equal(t, VMAddrValue{VMAddr: addr2, Value: 20}, value)
 	_, ok = values.At(-1)
 	require.False(t, ok)
 	_, ok = values.At(len(values))
@@ -230,6 +230,6 @@ func TestVmAddrValuesAccessors(t *testing.T) {
 	actual, ok := values.Get(addr1)
 	require.True(t, ok)
 	require.Equal(t, uint32(10), actual)
-	_, ok = values.Get(MustNewVmAddrFromString("V3"))
+	_, ok = values.Get(MustNewVMAddrFromString("V3"))
 	require.False(t, ok)
 }

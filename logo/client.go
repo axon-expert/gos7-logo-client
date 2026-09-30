@@ -12,14 +12,14 @@ import (
 
 type Client interface {
 	Connect(ctx context.Context) error
-	Read(addr VmAddr) (uint32, error)
-	ReadMany(addrs ...VmAddr) (VmAddrValues, error)
-	ReadManyTo(buf []byte, addrs ...VmAddr) error
+	Read(addr VMAddr) (uint32, error)
+	ReadMany(addrs ...VMAddr) (VMAddrValues, error)
+	ReadManyTo(buf []byte, addrs ...VMAddr) error
 	Stream(
-		ctx context.Context, interval time.Duration, addrs ...VmAddr,
+		ctx context.Context, interval time.Duration, addrs ...VMAddr,
 	) (<-chan StreamResult, error)
-	Write(addr VmAddr, value uint32) error
-	WriteMany(addrs ...VmAddrValue) error
+	Write(addr VMAddr, value uint32) error
+	WriteMany(addrs ...VMAddrValue) error
 	Disconnect() error
 }
 
@@ -27,7 +27,7 @@ var ErrNotConnected = errors.New("client is not connected")
 var ErrReadOnlyAddress = errors.New("address is read-only")
 
 type StreamResult struct {
-	Data VmAddrValues
+	Data VMAddrValues
 	Err  error
 }
 
@@ -71,7 +71,7 @@ func (c *client) ensureConnected() error {
 	return nil
 }
 
-func (c *client) Write(addr VmAddr, value uint32) error {
+func (c *client) Write(addr VMAddr, value uint32) error {
 	if err := c.ensureConnected(); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -97,19 +97,19 @@ func (c *client) Write(addr VmAddr, value uint32) error {
 	return nil
 }
 
-func (c *client) WriteMany(args ...VmAddrValue) error {
+func (c *client) WriteMany(args ...VMAddrValue) error {
 	if len(args) == 0 {
 		return fmt.Errorf("failed `WriteMany`: args is empty")
 	}
 	if err := c.ensureConnected(); err != nil {
 		return fmt.Errorf("WriteMany: %w", err)
 	}
-	addrs := make([]VmAddr, len(args))
+	addrs := make([]VMAddr, len(args))
 	for i, arg := range args {
-		if arg.VmAddr.Type == Output {
-			return fmt.Errorf("WriteMany: %s: %w", arg.VmAddr, ErrReadOnlyAddress)
+		if arg.VMAddr.Type == Output {
+			return fmt.Errorf("WriteMany: %s: %w", arg.VMAddr, ErrReadOnlyAddress)
 		}
-		addrs[i] = arg.VmAddr
+		addrs[i] = arg.VMAddr
 	}
 	start, size, err := vmAddrRange(addrs)
 	if err != nil {
@@ -120,8 +120,8 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 		return err
 	}
 	for _, val := range args {
-		offset := int(val.VmAddr.Byte - start)
-		if err := c.writeToBuffer(val.VmAddr, buff[offset:], val.Value); err != nil {
+		offset := int(val.VMAddr.Byte - start)
+		if err := c.writeToBuffer(val.VMAddr, buff[offset:], val.Value); err != nil {
 			return err
 		}
 	}
@@ -131,7 +131,7 @@ func (c *client) WriteMany(args ...VmAddrValue) error {
 	return nil
 }
 
-func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
+func (c *client) writeToBuffer(addr VMAddr, buff []byte, value uint32) error {
 	if err := addr.Validate(); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -160,7 +160,7 @@ func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
 	return nil
 }
 
-func (c *client) Read(addr VmAddr) (uint32, error) {
+func (c *client) Read(addr VMAddr) (uint32, error) {
 	if err := c.ensureConnected(); err != nil {
 		return 0, fmt.Errorf("read: %w", err)
 	}
@@ -179,7 +179,7 @@ func (c *client) Read(addr VmAddr) (uint32, error) {
 	return result, nil
 }
 
-func (c *client) ReadMany(args ...VmAddr) (VmAddrValues, error) {
+func (c *client) ReadMany(args ...VMAddr) (VMAddrValues, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
@@ -192,19 +192,19 @@ func (c *client) ReadMany(args ...VmAddr) (VmAddrValues, error) {
 		return nil, err
 	}
 
-	values := make(VmAddrValues, len(args))
+	values := make(VMAddrValues, len(args))
 	for i, addr := range args {
 		offset := int(addr.Byte - start)
 		value, err := c.getIntFromBuffer(addr, buff[offset:])
 		if err != nil {
 			return nil, fmt.Errorf("ReadMany: decode %s: %w", addr, err)
 		}
-		values[i] = VmAddrValue{VmAddr: addr, Value: value}
+		values[i] = VMAddrValue{VMAddr: addr, Value: value}
 	}
 	return values, nil
 }
 
-func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
+func (c *client) ReadManyTo(buff []byte, args ...VMAddr) error {
 	if len(args) == 0 {
 		return nil
 	}
@@ -225,7 +225,7 @@ func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
 }
 
 func (c *client) Stream(
-	ctx context.Context, interval time.Duration, addrs ...VmAddr,
+	ctx context.Context, interval time.Duration, addrs ...VMAddr,
 ) (<-chan StreamResult, error) {
 	if interval <= 0 {
 		return nil, errors.New("stream interval must be greater than zero")
@@ -240,7 +240,7 @@ func (c *client) Stream(
 		return nil, fmt.Errorf("stream: %w", err)
 	}
 
-	streamAddrs := append([]VmAddr(nil), addrs...)
+	streamAddrs := append([]VMAddr(nil), addrs...)
 	results := make(chan StreamResult, 1)
 	go c.stream(ctx, interval, streamAddrs, results)
 	return results, nil
@@ -249,7 +249,7 @@ func (c *client) Stream(
 func (c *client) stream(
 	ctx context.Context,
 	interval time.Duration,
-	addrs []VmAddr,
+	addrs []VMAddr,
 	results chan<- StreamResult,
 ) {
 	defer close(results)
@@ -279,7 +279,7 @@ func (c *client) stream(
 	}
 }
 
-func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
+func (c *client) getIntFromBuffer(addr VMAddr, buff []byte) (uint32, error) {
 	if err := addr.Validate(); err != nil {
 		return 0, fmt.Errorf("read: %w", err)
 	}
@@ -312,7 +312,7 @@ func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
 	return 0, errors.New("read: unknown data type")
 }
 
-func vmAddrRange(addrs []VmAddr) (uint32, int, error) {
+func vmAddrRange(addrs []VMAddr) (uint32, int, error) {
 	if len(addrs) == 0 {
 		return 0, 0, errors.New("addresses are empty")
 	}

@@ -44,28 +44,28 @@ func TestClientWriteManyRead(t *testing.T) {
 	if errConnection != nil {
 		t.Skip(errConnection)
 	}
-	vdVmAddr, err := gos7logo.NewVmAddrFromString("VD3")
+	vdVMAddr, err := gos7logo.NewVMAddrFromString("VD3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	vwVmAddr, err := gos7logo.NewVmAddrFromString("VW31")
+	vwVMAddr, err := gos7logo.NewVMAddrFromString("VW31")
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1VmAddr, err := gos7logo.NewVmAddrFromString("V2.4")
+	v1VMAddr, err := gos7logo.NewVMAddrFromString("V2.4")
 	if err != nil {
 		t.Fatal(err)
 	}
-	v2VmAddr, err := gos7logo.NewVmAddrFromString("V94")
+	v2VMAddr, err := gos7logo.NewVMAddrFromString("V94")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	vmAddrVals := []gos7logo.VmAddrValue{
-		{VmAddr: vdVmAddr, Value: uint32(rand.Intn(100))},
-		{VmAddr: v1VmAddr, Value: uint32(0)},
-		{VmAddr: v2VmAddr, Value: uint32(rand.Intn(100))},
-		{VmAddr: vwVmAddr, Value: uint32(rand.Intn(100))},
+	vmAddrVals := []gos7logo.VMAddrValue{
+		{VMAddr: vdVMAddr, Value: uint32(rand.Intn(100))},
+		{VMAddr: v1VMAddr, Value: uint32(0)},
+		{VMAddr: v2VMAddr, Value: uint32(rand.Intn(100))},
+		{VMAddr: vwVMAddr, Value: uint32(rand.Intn(100))},
 	}
 
 	if err := client.WriteMany(vmAddrVals...); err != nil {
@@ -73,13 +73,13 @@ func TestClientWriteManyRead(t *testing.T) {
 	}
 
 	for _, val := range vmAddrVals {
-		v, err := client.Read(val.VmAddr)
+		v, err := client.Read(val.VMAddr)
 		if err != nil {
 			t.Errorf("failed read: %s", err)
 		}
 
-		if val.VmAddr.Type == gos7logo.Bit {
-			expectedBit := (val.Value >> uint32(val.VmAddr.Bit)) & 1
+		if val.VMAddr.Type == gos7logo.Bit {
+			expectedBit := (val.Value >> uint32(val.VMAddr.Bit)) & 1
 			if expectedBit != v {
 				t.Errorf("write and read values not equals for bit: expected %d, got %d",
 					expectedBit, v)
@@ -94,8 +94,8 @@ func TestClientWriteManyRead(t *testing.T) {
 	}
 }
 
-func vmAddr(s string) gos7logo.VmAddr {
-	return gos7logo.MustNewVmAddrFromString(s)
+func vmAddr(s string) gos7logo.VMAddr {
+	return gos7logo.MustNewVMAddrFromString(s)
 }
 
 func TestClientReadMany(t *testing.T) {
@@ -107,9 +107,9 @@ func TestClientReadMany(t *testing.T) {
 	addr3 := vmAddr("V4.2")
 
 	if err := client.WriteMany(
-		gos7logo.VmAddrValue{VmAddr: addr1, Value: 123},
-		gos7logo.VmAddrValue{VmAddr: addr2, Value: 1},
-		gos7logo.VmAddrValue{VmAddr: addr3, Value: 0},
+		gos7logo.VMAddrValue{VMAddr: addr1, Value: 123},
+		gos7logo.VMAddrValue{VMAddr: addr2, Value: 1},
+		gos7logo.VMAddrValue{VMAddr: addr3, Value: 0},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -117,16 +117,16 @@ func TestClientReadMany(t *testing.T) {
 	res, err := client.ReadMany(addr1, addr2, addr3)
 	require.NoError(t, err)
 	require.Len(t, res, 3)
-	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr1, Value: 123}, res[0])
-	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr2, Value: 1}, res[1])
-	require.Equal(t, gos7logo.VmAddrValue{VmAddr: addr3, Value: 0}, res[2])
+	require.Equal(t, gos7logo.VMAddrValue{VMAddr: addr1, Value: 123}, res[0])
+	require.Equal(t, gos7logo.VMAddrValue{VMAddr: addr2, Value: 1}, res[1])
+	require.Equal(t, gos7logo.VMAddrValue{VMAddr: addr3, Value: 0}, res[2])
 }
 
 func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	if errConnection != nil {
 		t.Skip(errConnection)
 	}
-	addr, err := gos7logo.NewVmAddrFromString(vmAddr)
+	addr, err := gos7logo.NewVMAddrFromString(vmAddr)
 	if err != nil {
 		t.Errorf("no correct vm address `%s`: %s", vmAddr, err)
 	}
@@ -154,18 +154,18 @@ func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 }
 
 type addrs struct {
-	Bit   gos7logo.VmAddr
-	Byte  gos7logo.VmAddr
-	Word  gos7logo.VmAddr
-	DWord gos7logo.VmAddr
+	Bit   gos7logo.VMAddr
+	Byte  gos7logo.VMAddr
+	Word  gos7logo.VMAddr
+	DWord gos7logo.VMAddr
 }
 
 func TestMarshaling(t *testing.T) {
 	as := addrs{
-		Bit:   gos7logo.MustNewVmAddr(gos7logo.Bit, 1, 2),
-		Byte:  gos7logo.MustNewVmAddr(gos7logo.Byte, 3, 0),
-		Word:  gos7logo.MustNewVmAddr(gos7logo.Word, 4, 0),
-		DWord: gos7logo.MustNewVmAddr(gos7logo.DWord, 5, 0),
+		Bit:   gos7logo.MustNewVMAddr(gos7logo.Bit, 1, 2),
+		Byte:  gos7logo.MustNewVMAddr(gos7logo.Byte, 3, 0),
+		Word:  gos7logo.MustNewVMAddr(gos7logo.Word, 4, 0),
+		DWord: gos7logo.MustNewVMAddr(gos7logo.DWord, 5, 0),
 	}
 	raw, err := json.Marshal(as)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestMarshaling(t *testing.T) {
 	}
 }
 
-func TestUnmarshalingMalformedVmAddr(t *testing.T) {
+func TestUnmarshalingMalformedVMAddr(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string

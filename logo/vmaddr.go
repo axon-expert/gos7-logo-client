@@ -56,7 +56,7 @@ func (t DataType) String() string {
 	return "V"
 }
 
-func parseTypeByVmAddr(addr string) (DataType, error) {
+func parseTypeByVMAddr(addr string) (DataType, error) {
 	switch {
 	case regexp.MustCompile(`^V[0-9]+\.[0-7]$`).MatchString(addr):
 		return Bit, nil
@@ -73,29 +73,29 @@ func parseTypeByVmAddr(addr string) (DataType, error) {
 	return 0, errors.New("unknown address format")
 }
 
-type VmAddr struct {
+type VMAddr struct {
 	Type DataType
 	Byte uint32
 	Bit  uint8
 }
 
-func NewVmAddr(t DataType, byteAddr uint32, bit uint8) (VmAddr, error) {
-	addr := VmAddr{Type: t, Bit: bit, Byte: byteAddr}
+func NewVMAddr(t DataType, byteAddr uint32, bit uint8) (VMAddr, error) {
+	addr := VMAddr{Type: t, Bit: bit, Byte: byteAddr}
 	if err := addr.Validate(); err != nil {
-		return VmAddr{}, err
+		return VMAddr{}, err
 	}
 	return addr, nil
 }
 
-func MustNewVmAddr(t DataType, byteAddr uint32, bit uint8) VmAddr {
-	addr, err := NewVmAddr(t, byteAddr, bit)
+func MustNewVMAddr(t DataType, byteAddr uint32, bit uint8) VMAddr {
+	addr, err := NewVMAddr(t, byteAddr, bit)
 	if err != nil {
 		panic(err)
 	}
 	return addr
 }
 
-func (a VmAddr) Validate() error {
+func (a VMAddr) Validate() error {
 	if a.Type.Size() == 0 {
 		return fmt.Errorf("unknown data type: %d", a.Type)
 	}
@@ -114,23 +114,23 @@ func (a VmAddr) Validate() error {
 	return nil
 }
 
-func NewVmAddrFromString(addr string) (VmAddr, error) {
-	a := VmAddr{}
+func NewVMAddrFromString(addr string) (VMAddr, error) {
+	a := VMAddr{}
 	if err := a.UnmarshalText([]byte(addr)); err != nil {
 		return a, err
 	}
 	return a, nil
 }
 
-func MustNewVmAddrFromString(addr string) VmAddr {
-	parsed, err := NewVmAddrFromString(addr)
+func MustNewVMAddrFromString(addr string) VMAddr {
+	parsed, err := NewVMAddrFromString(addr)
 	if err != nil {
 		panic(err)
 	}
 	return parsed
 }
 
-func (addr VmAddr) MarshalText() ([]byte, error) {
+func (addr VMAddr) MarshalText() ([]byte, error) {
 	if addr.Type == Output {
 		output := (addr.Byte-outputByteStart)*8 + uint32(addr.Bit) + 1
 		return fmt.Appendf(nil, "Q%d", output), nil
@@ -141,14 +141,14 @@ func (addr VmAddr) MarshalText() ([]byte, error) {
 	return fmt.Appendf(nil, "%s%d", addr.Type.String(), addr.Byte), nil
 }
 
-func (addr VmAddr) String() string {
+func (addr VMAddr) String() string {
 	raw, _ := addr.MarshalText()
 	return string(raw)
 }
 
-func (a *VmAddr) UnmarshalText(raw []byte) error {
+func (a *VMAddr) UnmarshalText(raw []byte) error {
 	addr := string(raw)
-	addrType, err := parseTypeByVmAddr(addr)
+	addrType, err := parseTypeByVMAddr(addr)
 	if err != nil {
 		return fmt.Errorf("failed parse data type: %s", err)
 	}
@@ -161,7 +161,7 @@ func (a *VmAddr) UnmarshalText(raw []byte) error {
 			return errors.New("output address must be between Q1 and Q64")
 		}
 		output--
-		*a = VmAddr{
+		*a = VMAddr{
 			Type: Output,
 			Byte: outputByteStart + uint32(output/8),
 			Bit:  uint8(output % 8),
@@ -178,7 +178,7 @@ func (a *VmAddr) UnmarshalText(raw []byte) error {
 	if err != nil {
 		return fmt.Errorf("invalid byte address: %w", err)
 	}
-	parsed := VmAddr{Type: addrType, Byte: uint32(byteAddr)}
+	parsed := VMAddr{Type: addrType, Byte: uint32(byteAddr)}
 	if addrType == Bit {
 		bitAddr, err := strconv.ParseUint(addrSlice[1], 10, 8)
 		if err != nil {
@@ -193,29 +193,29 @@ func (a *VmAddr) UnmarshalText(raw []byte) error {
 	return nil
 }
 
-type VmAddrValue struct {
-	VmAddr VmAddr
+type VMAddrValue struct {
+	VMAddr VMAddr
 	Value  uint32
 }
 
-type VmAddrValues []VmAddrValue
+type VMAddrValues []VMAddrValue
 
-func (values VmAddrValues) At(index int) (VmAddrValue, bool) {
+func (values VMAddrValues) At(index int) (VMAddrValue, bool) {
 	if index < 0 || index >= len(values) {
-		return VmAddrValue{}, false
+		return VMAddrValue{}, false
 	}
 	return values[index], true
 }
 
-func (values VmAddrValues) Get(addr VmAddr) (uint32, bool) {
+func (values VMAddrValues) Get(addr VMAddr) (uint32, bool) {
 	for _, value := range values {
-		if value.VmAddr == addr {
+		if value.VMAddr == addr {
 			return value.Value, true
 		}
 	}
 	return 0, false
 }
 
-func compareVmAddrByte(lhs, rhs VmAddr) int {
+func compareVMAddrByte(lhs, rhs VMAddr) int {
 	return cmp.Compare(lhs.Byte, rhs.Byte)
 }
