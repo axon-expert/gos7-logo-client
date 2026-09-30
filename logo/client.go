@@ -1,102 +1,16 @@
 package gos7logo
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"slices"
-	"strconv"
-	"strings"
-	"unicode"
+	"sync/atomic"
 
 	gos7patch "github.com/axon-expert/gos7-logo-client/gos7-patch"
 )
 
-type DataType int
-
-const (
-	Byte DataType = iota
-	Bit
-	Word
-	Counter
-	Timer
-	DWord
-	Real
-)
-
-func (t DataType) Size() int {
-	switch t {
-	case Bit, Byte:
-		return 1
-	case Word, Counter, Timer:
-		return 2
-	case DWord, Real:
-		return 4
-	default:
-		return 0
-	}
-}
-
-func parseTypeByVmAddr(addr string) (DataType, error) {
-	switch {
-	case regexp.MustCompile(`V[0-9]{1,4}\.[0-7]`).MatchString(addr):
-		return Bit, nil
-	case regexp.MustCompile(`V[0-9]+`).MatchString(addr):
-		return Byte, nil
-	case regexp.MustCompile(`VW[0-9]+`).MatchString(addr):
-		return Word, nil
-	case regexp.MustCompile(`VD[0-9]+`).MatchString(addr):
-		return DWord, nil
-	}
-
-	return 0, errors.New("unknown address format")
-}
-
-type VmAddr struct {
-	Type DataType
-	Byte uint32
-	Bit  uint8
-}
-
-func NewVmAddr(t DataType, byteAddr uint32, bit uint8) VmAddr {
-	return VmAddr{Type: t, Bit: bit, Byte: byteAddr}
-}
-
-func NewVmAddrFromString(addr string) (VmAddr, error) {
-	addrType, err := parseTypeByVmAddr(addr)
-	if err != nil {
-		return VmAddr{}, fmt.Errorf("failed parse data type: %s", err)
-	}
-	addrSlice := strings.Split(addr, ".")
-	var bitAddr uint8
-	if len(addrSlice) > 1 {
-		bitAddrInt, err := strconv.Atoi(addrSlice[1])
-		if err != nil {
-			return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[1])
-		}
-		bitAddr = uint8(bitAddrInt)
-	}
-	var byteAddr uint32
-	for i, ch := range addrSlice[0] {
-		if unicode.IsDigit(ch) {
-			tempByteAddr, err := strconv.Atoi(addrSlice[0][i:])
-			if err != nil {
-				return VmAddr{}, fmt.Errorf("`%s` is not digits", addrSlice[0][i:])
-			}
-			byteAddr = uint32(tempByteAddr)
-			break
-		}
-	}
-
-	return VmAddr{Type: addrType, Byte: byteAddr, Bit: bitAddr}, nil
-}
-
-type VmAddrValue struct {
-	VmAddr VmAddr
-	Value  uint32
-}
-
 type Client interface {
+	Connect(ctx context.Context) error
 	Read(addr VmAddr) (uint32, error)
 	ReadMany(addrs ...VmAddr) ([]byte, error)
 	ReadManyTo(buf []byte, addrs ...VmAddr) error
@@ -105,28 +19,55 @@ type Client interface {
 	Disconnect() error
 }
 
+var ErrNotConnected = errors.New("client is not connected")
+
 var _ Client = &client{}
 
 type client struct {
-	helper   gos7patch.Helper
-	client   gos7patch.Client
-	handler  *gos7patch.TCPClientHandler
-	area     string
-	dbNumber int
+	helper    gos7patch.Helper
+	client    gos7patch.Client
+	handler   *gos7patch.TCPClientHandler
+	area      string
+	dbNumber  int
+	connected atomic.Bool
 }
 
-func NewClient(addr string, rack int, slot int, snap7TSAP, logoTSAP uint16) (*client, error) {
-	handler := gos7patch.NewTCPClientHandlerWithTSAP(addr, rack, slot, snap7TSAP, logoTSAP)
-	if err := handler.Connect(); err != nil {
-		return nil, err
-	}
+func NewClient(config Config) *client {
+	handler := gos7patch.NewTCPClientHandlerWithTSAP(
+		config.endpoint(),
+		uint16(config.LocalTSAP),
+		uint16(config.RemoteTSAP),
+	)
 	return &client{
 		area: "DB", dbNumber: 1,
 		client:  gos7patch.NewClient(handler),
-		handler: handler}, nil
+		handler: handler}
+}
+
+func (c *client) Connect(ctx context.Context) error {
+	c.connected.Store(false)
+	if err := c.handler.ConnectContext(ctx); err != nil {
+		_ = c.handler.Close()
+		return fmt.Errorf("connect: %w", err)
+	}
+	c.connected.Store(true)
+	return nil
+}
+
+func (c *client) ensureConnected() error {
+	if !c.connected.Load() {
+		return ErrNotConnected
+	}
+	return nil
 }
 
 func (c *client) Write(addr VmAddr, value uint32) error {
+	if err := c.ensureConnected(); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	if err := addr.Validate(); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if addr.Type == Bit {
@@ -142,30 +83,45 @@ func (c *client) Write(addr VmAddr, value uint32) error {
 	}
 	return nil
 }
+
 func (c *client) WriteMany(args ...VmAddrValue) error {
 	if len(args) == 0 {
 		return fmt.Errorf("failed `WriteMany`: args is empty")
 	}
-	minByte := slices.MinFunc(args, compareVmAddrValueByte)
-	maxByte := slices.MaxFunc(args, compareVmAddrValueByte)
-	size := int(maxByte.VmAddr.Byte-minByte.VmAddr.Byte) + maxByte.VmAddr.Type.Size()
+	if err := c.ensureConnected(); err != nil {
+		return fmt.Errorf("WriteMany: %w", err)
+	}
+	addrs := make([]VmAddr, len(args))
+	for i, arg := range args {
+		addrs[i] = arg.VmAddr
+	}
+	start, size, err := vmAddrRange(addrs)
+	if err != nil {
+		return fmt.Errorf("WriteMany: %w", err)
+	}
 	buff := make([]byte, size)
-	if err := c.client.AGReadDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
+	if err := c.client.AGReadDB(c.dbNumber, int(start), size, buff); err != nil {
 		return err
 	}
 	for _, val := range args {
-		offset := int(val.VmAddr.Byte - minByte.VmAddr.Byte)
+		offset := int(val.VmAddr.Byte - start)
 		if err := c.writeToBuffer(val.VmAddr, buff[offset:], val.Value); err != nil {
 			return err
 		}
 	}
-	if err := c.client.AGWriteDB(c.dbNumber, int(minByte.VmAddr.Byte), size, buff); err != nil {
+	if err := c.client.AGWriteDB(c.dbNumber, int(start), size, buff); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
+	if err := addr.Validate(); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	if len(buff) < addr.Type.Size() {
+		return fmt.Errorf("write: buffer too small for type %v", addr.Type)
+	}
 	switch addr.Type {
 	case Bit:
 		if value > 0 {
@@ -189,6 +145,12 @@ func (c *client) writeToBuffer(addr VmAddr, buff []byte, value uint32) error {
 }
 
 func (c *client) Read(addr VmAddr) (uint32, error) {
+	if err := c.ensureConnected(); err != nil {
+		return 0, fmt.Errorf("read: %w", err)
+	}
+	if err := addr.Validate(); err != nil {
+		return 0, fmt.Errorf("read: %w", err)
+	}
 	size := addr.Type.Size()
 	buff := make([]byte, size)
 	if err := c.client.AGReadDB(c.dbNumber, int(addr.Byte), size, buff); err != nil {
@@ -205,13 +167,14 @@ func (c *client) ReadMany(args ...VmAddr) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
-	minByte := slices.MinFunc(args, compareVmAddrByte)
-	maxByte := slices.MaxFunc(args, compareVmAddrByte)
-	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
-	buff := make([]byte, size)
-	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
-		return nil, err
+	if err := c.ensureConnected(); err != nil {
+		return nil, fmt.Errorf("ReadMany: %w", err)
 	}
+	_, size, err := vmAddrRange(args)
+	if err != nil {
+		return nil, fmt.Errorf("ReadMany: %w", err)
+	}
+	buff := make([]byte, size)
 	if err := c.ReadManyTo(buff, args...); err != nil {
 		return nil, err
 	}
@@ -223,19 +186,26 @@ func (c *client) ReadManyTo(buff []byte, args ...VmAddr) error {
 	if len(args) == 0 {
 		return nil
 	}
-	minByte := slices.MinFunc(args, compareVmAddrByte)
-	maxByte := slices.MaxFunc(args, compareVmAddrByte)
-	size := int(maxByte.Byte-minByte.Byte) + maxByte.Type.Size()
+	if err := c.ensureConnected(); err != nil {
+		return fmt.Errorf("ReadManyTo: %w", err)
+	}
+	start, size, err := vmAddrRange(args)
+	if err != nil {
+		return fmt.Errorf("ReadManyTo: %w", err)
+	}
 	if len(buff) < size {
 		return fmt.Errorf("ReadManyTo: need %d bytes, but buffer only %d bytes", size, len(buff))
 	}
-	if err := c.client.AGReadDB(c.dbNumber, int(minByte.Byte), size, buff); err != nil {
+	if err := c.client.AGReadDB(c.dbNumber, int(start), size, buff); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
+	if err := addr.Validate(); err != nil {
+		return 0, fmt.Errorf("read: %w", err)
+	}
 	if len(buff) < addr.Type.Size() {
 		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
 	}
@@ -262,9 +232,35 @@ func (c *client) getIntFromBuffer(addr VmAddr, buff []byte) (uint32, error) {
 		return uint32(result), nil
 	}
 
-	return 0, errors.New("write: unknown data type")
+	return 0, errors.New("read: unknown data type")
+}
+
+func vmAddrRange(addrs []VmAddr) (uint32, int, error) {
+	if len(addrs) == 0 {
+		return 0, 0, errors.New("addresses are empty")
+	}
+	start := addrs[0].Byte
+	var end uint64
+	for _, addr := range addrs {
+		if err := addr.Validate(); err != nil {
+			return 0, 0, err
+		}
+		if addr.Byte < start {
+			start = addr.Byte
+		}
+		addrEnd := uint64(addr.Byte) + uint64(addr.Type.Size())
+		if addrEnd > end {
+			end = addrEnd
+		}
+	}
+	span := end - uint64(start)
+	if span > uint64(^uint(0)>>1) {
+		return 0, 0, errors.New("address range is too large")
+	}
+	return start, int(span), nil
 }
 
 func (c *client) Disconnect() error {
+	c.connected.Store(false)
 	return c.handler.Close()
 }

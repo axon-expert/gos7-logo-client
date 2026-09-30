@@ -1,23 +1,27 @@
 package test
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
 	"strconv"
 	"testing"
 
-	gos7logo "github.com/axon-expert/gos7-logo-client"
+	gos7logo "github.com/axon-expert/gos7-logo-client/logo"
 	"github.com/stretchr/testify/require"
 )
 
 var client gos7logo.Client // nolint:gochecknoglobals
+var errConnection error    // nolint:gochecknoglobals
 
 func TestMain(m *testing.M) {
 	// TODO: launch snap7 server
-	cl, err := gos7logo.NewClient("localhost:102", 0, 1, 0x100, 0x200)
-	if err != nil {
-		fmt.Printf("failed connect: %s\n", err)
+	cl := gos7logo.NewClient(gos7logo.NewConfig("localhost"))
+	errConnection = cl.Connect(context.Background())
+	if errConnection != nil {
+		fmt.Printf("controller tests will be skipped: %s\n", errConnection)
 	}
 	client = cl
 
@@ -37,6 +41,9 @@ func FuzzClientWriteRead(f *testing.F) {
 }
 
 func TestClientWriteManyRead(t *testing.T) {
+	if errConnection != nil {
+		t.Skip(errConnection)
+	}
 	vdVmAddr, err := gos7logo.NewVmAddrFromString("VD3")
 	if err != nil {
 		t.Fatal(err)
@@ -88,14 +95,13 @@ func TestClientWriteManyRead(t *testing.T) {
 }
 
 func vmAddr(s string) gos7logo.VmAddr {
-	v, err := gos7logo.NewVmAddrFromString(s)
-	if err != nil {
-		panic(err)
-	}
-	return v
+	return gos7logo.MustNewVmAddrFromString(s)
 }
 
 func TestClientReadMany(t *testing.T) {
+	if errConnection != nil {
+		t.Skip(errConnection)
+	}
 	addr1 := vmAddr("V3")
 	addr2 := vmAddr("V4.1")
 	addr3 := vmAddr("V4.2")
@@ -119,6 +125,9 @@ func TestClientReadMany(t *testing.T) {
 }
 
 func writeReadTest(t *testing.T, vmAddr string, value uint32) {
+	if errConnection != nil {
+		t.Skip(errConnection)
+	}
 	addr, err := gos7logo.NewVmAddrFromString(vmAddr)
 	if err != nil {
 		t.Errorf("no correct vm address `%s`: %s", vmAddr, err)
@@ -143,5 +152,54 @@ func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	if value != v {
 		t.Errorf("write and read values not equals for %s : %s != %s",
 			vmAddr, strconv.Itoa(int(value)), strconv.Itoa(int(v)))
+	}
+}
+
+type addrs struct {
+	Bit   gos7logo.VmAddr
+	Byte  gos7logo.VmAddr
+	Word  gos7logo.VmAddr
+	DWord gos7logo.VmAddr
+}
+
+func TestMarshaling(t *testing.T) {
+	as := addrs{
+		Bit:   gos7logo.MustNewVmAddr(gos7logo.Bit, 1, 2),
+		Byte:  gos7logo.MustNewVmAddr(gos7logo.Byte, 3, 0),
+		Word:  gos7logo.MustNewVmAddr(gos7logo.Word, 4, 0),
+		DWord: gos7logo.MustNewVmAddr(gos7logo.DWord, 5, 0),
+	}
+	raw, err := json.Marshal(as)
+	if err != nil {
+		t.Errorf("fail to marshal addrs: %s", err.Error())
+	}
+	expected := `{"Bit":"V1.2","Byte":"V3","Word":"VW4","DWord":"VD5"}`
+	if string(raw) != expected {
+		t.Errorf("expect:\n:%s\ngot:\n%s", expected, string(raw))
+	}
+
+	as1 := addrs{}
+	err = json.Unmarshal(raw, &as1)
+	require.NoError(t, err, "fail to unmarshal addrs")
+	if as1 != as {
+		t.Errorf("expected:\n%#v\ngot:\n%v", as, as1)
+	}
+}
+
+func TestUnmarshalingMalformedVmAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "invalid address", raw: `{"Bit":"invalid"}`},
+		{name: "invalid JSON", raw: `{"Bit":"V1.2"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as addrs
+			err := json.Unmarshal([]byte(tt.raw), &as)
+			require.Error(t, err)
+		})
 	}
 }

@@ -2,6 +2,10 @@ module github.com/axon-expert/gos7-logo-client
 
 go 1.26.0
 
+tool (
+	github.com/axon-expert/gos7-logo-client/cmd/logo
+)
+
 require github.com/stretchr/testify v1.10.0
 
 require (

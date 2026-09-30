@@ -68,12 +68,7 @@ func NewTCPClientHandlerWithConnectType(
 }
 
 // NewTCPClientHandlerWithTSAP allocates a new TCPClientHandler with TSAP.
-func NewTCPClientHandlerWithTSAP(
-	address string,
-	rack int,
-	slot int,
-	localTSAP, remoteTSAP uint16,
-) *TCPClientHandler {
+func NewTCPClientHandlerWithTSAP(address string, localTSAP, remoteTSAP uint16) *TCPClientHandler {
 	h := &TCPClientHandler{}
 	h.Address = address
 	h.Timeout = tcpTimeout
