@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"syscall"
 	"testing"
@@ -15,19 +17,36 @@ import (
 const (
 	commandRead  = "read"
 	commandWrite = "write"
+	commandWatch = "watch"
 	addressVW4   = "VW4"
+	optionRetry  = "-retry"
 )
 
 type fakeClient struct {
-	values map[gos7logo.VMAddr]uint32
-	closed bool
+	values        map[gos7logo.VMAddr]uint32
+	closed        bool
+	streamErr     error
+	readFailures  int
+	writeFailures int
+	readCalls     int
+	writeCalls    int
 }
 
-func (c *fakeClient) Connect(context.Context) error {
-	return nil
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	output := new(bytes.Buffer)
+	previous := logger
+	logger = slog.New(slog.NewTextHandler(output, nil))
+	t.Cleanup(func() { logger = previous })
+	return output
 }
 
-func (c *fakeClient) Read(addr gos7logo.VMAddr) (uint32, error) {
+func (c *fakeClient) Read(_ context.Context, addr gos7logo.VMAddr) (uint32, error) {
+	c.readCalls++
+	if c.readFailures > 0 {
+		c.readFailures--
+		return 0, errors.New("connection lost")
+	}
 	return c.values[addr], nil
 }
 
@@ -36,12 +55,15 @@ func (c *fakeClient) Stream(
 	_ time.Duration,
 	addresses ...gos7logo.VMAddr,
 ) (<-chan gos7logo.StreamResult, error) {
-	results := make(chan gos7logo.StreamResult, 1)
+	results := make(chan gos7logo.StreamResult, 2)
 	defer close(results)
 	select {
 	case <-ctx.Done():
 		return results, nil
 	default:
+	}
+	if c.streamErr != nil {
+		results <- gos7logo.StreamResult{Err: c.streamErr}
 	}
 	values := make(gos7logo.VMAddrValues, len(addresses))
 	for i, addr := range addresses {
@@ -51,12 +73,17 @@ func (c *fakeClient) Stream(
 	return results, nil
 }
 
-func (c *fakeClient) Write(addr gos7logo.VMAddr, value uint32) error {
+func (c *fakeClient) Write(_ context.Context, addr gos7logo.VMAddr, value uint32) error {
+	c.writeCalls++
+	if c.writeFailures > 0 {
+		c.writeFailures--
+		return errors.New("connection lost")
+	}
 	c.values[addr] = value
 	return nil
 }
 
-func (c *fakeClient) Disconnect() error {
+func (c *fakeClient) Close() error {
 	c.closed = true
 	return nil
 }
@@ -64,13 +91,13 @@ func (c *fakeClient) Disconnect() error {
 func TestRunRead(t *testing.T) {
 	addr := gos7logo.MustNewVMAddrFromString(addressVW4)
 	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{addr: 42}}
-	var output bytes.Buffer
+	logs := captureLogs(t)
 
-	err := run(context.Background(), []string{commandRead, addressVW4}, &output, &bytes.Buffer{},
+	err := run(context.Background(), []string{commandRead, addressVW4}, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
-	require.Equal(t, "VW4=42\n", output.String())
+	require.Contains(t, logs.String(), "VW4=42")
 	require.True(t, client.closed)
 }
 
@@ -80,13 +107,15 @@ func TestRunReadRange(t *testing.T) {
 		gos7logo.MustNewVMAddrFromString("V4"): 4,
 		gos7logo.MustNewVMAddrFromString("V5"): 5,
 	}}
-	var output bytes.Buffer
+	logs := captureLogs(t)
 
-	err := run(context.Background(), []string{commandRead, "V3-V5"}, &output, &bytes.Buffer{},
+	err := run(context.Background(), []string{commandRead, "V3-V5"}, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
-	require.Equal(t, "V3=3\nV4=4\nV5=5\n", output.String())
+	require.Contains(t, logs.String(), "V3=3")
+	require.Contains(t, logs.String(), "V4=4")
+	require.Contains(t, logs.String(), "V5=5")
 }
 
 func TestParseAddressRange(t *testing.T) {
@@ -142,13 +171,13 @@ func TestRunReadFormatsValue(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.format, func(t *testing.T) {
 			client := &fakeClient{values: map[gos7logo.VMAddr]uint32{addr: 42}}
-			var output bytes.Buffer
+			logs := captureLogs(t)
 
 			err := run(context.Background(), []string{"-f", test.format, commandRead, addressVW4},
-				&output, &bytes.Buffer{}, func(gos7logo.Config) logoClient { return client })
+				&bytes.Buffer{}, func(gos7logo.Config) logoClient { return client })
 
 			require.NoError(t, err)
-			require.Equal(t, "VW4="+test.want+"\n", output.String())
+			require.Contains(t, logs.String(), "VW4="+test.want)
 		})
 	}
 }
@@ -160,22 +189,73 @@ func TestFormatValueGroupsDecimalFromRight(t *testing.T) {
 
 func TestRunWrite(t *testing.T) {
 	client := &fakeClient{values: make(map[gos7logo.VMAddr]uint32)}
-	var output bytes.Buffer
+	logs := captureLogs(t)
 
 	err := run(context.Background(), []string{commandWrite, "V3", "0xff", "V4.2", "1"},
-		&output, &bytes.Buffer{},
+		&bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
 	require.Equal(t, uint32(255), client.values[gos7logo.MustNewVMAddrFromString("V3")])
 	require.Equal(t, uint32(1), client.values[gos7logo.MustNewVMAddrFromString("V4.2")])
-	require.Equal(t, "V3=255\nV4.2=1\n", output.String())
+	require.Contains(t, logs.String(), "V3=255")
+	require.Contains(t, logs.String(), "V4.2=1")
+}
+
+func TestRunReadRetriesWithReconnect(t *testing.T) {
+	addr := gos7logo.MustNewVMAddrFromString("V1")
+	client := &fakeClient{
+		values:       map[gos7logo.VMAddr]uint32{addr: 7},
+		readFailures: 1,
+	}
+	logs := captureLogs(t)
+
+	err := run(context.Background(), []string{optionRetry, commandRead, "V1"},
+		&bytes.Buffer{}, func(gos7logo.Config) logoClient { return client })
+
+	require.NoError(t, err)
+	require.Equal(t, 2, client.readCalls)
+	require.Contains(t, logs.String(), "V1=7")
+	require.Contains(t, logs.String(), "operation failed; retrying")
+	require.Contains(t, logs.String(), "error=\"read V1: connection lost\"")
+}
+
+func TestRunWriteRetriesWithReconnect(t *testing.T) {
+	client := &fakeClient{
+		values:        make(map[gos7logo.VMAddr]uint32),
+		writeFailures: 1,
+	}
+	logs := captureLogs(t)
+
+	err := run(context.Background(), []string{optionRetry, commandWrite, "V1", "7"},
+		&bytes.Buffer{}, func(gos7logo.Config) logoClient { return client })
+
+	require.NoError(t, err)
+	require.Equal(t, 2, client.writeCalls)
+	require.Equal(t, uint32(7), client.values[gos7logo.MustNewVMAddrFromString("V1")])
+	require.Contains(t, logs.String(), "V1=7")
+	require.Contains(t, logs.String(), "operation failed; retrying")
+	require.Contains(t, logs.String(), "error=\"write V1: connection lost\"")
+}
+
+func TestRunReadReconnectStopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client := &fakeClient{values: make(map[gos7logo.VMAddr]uint32)}
+	logs := captureLogs(t)
+
+	err := run(ctx, []string{optionRetry, commandRead, "V1"},
+		&bytes.Buffer{}, func(gos7logo.Config) logoClient { return client })
+
+	require.NoError(t, err)
+	require.Zero(t, client.readCalls)
+	require.Empty(t, logs.String())
 }
 
 func TestRunRejectsWritingOutputBeforeConnecting(t *testing.T) {
 	connected := false
 	err := run(context.Background(), []string{commandWrite, "Q1", "1"},
-		&bytes.Buffer{}, &bytes.Buffer{}, func(gos7logo.Config) logoClient {
+		&bytes.Buffer{}, func(gos7logo.Config) logoClient {
 			connected = true
 			return &fakeClient{}
 		})
@@ -193,7 +273,7 @@ func TestRunRejectsInvalidArgumentsBeforeConnecting(t *testing.T) {
 	}
 
 	err := run(context.Background(), []string{commandWrite, "V3", "256"},
-		&bytes.Buffer{}, &bytes.Buffer{}, newClient)
+		&bytes.Buffer{}, newClient)
 
 	require.EqualError(t, err, "invalid value for V3: byte value must be between 0 and 255")
 	require.False(t, connected)
@@ -202,7 +282,7 @@ func TestRunRejectsInvalidArgumentsBeforeConnecting(t *testing.T) {
 func TestRunRejectsInvalidOutputFormatBeforeConnecting(t *testing.T) {
 	connected := false
 	err := run(context.Background(), []string{"-f", "q", commandRead, "V1"},
-		&bytes.Buffer{}, &bytes.Buffer{}, func(gos7logo.Config) logoClient {
+		&bytes.Buffer{}, func(gos7logo.Config) logoClient {
 			connected = true
 			return &fakeClient{}
 		})
@@ -218,26 +298,46 @@ func TestRunWatchStopsWhenContextIsCancelled(t *testing.T) {
 	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
 		gos7logo.MustNewVMAddrFromString("V1"): 7,
 	}}
-	var output bytes.Buffer
+	logs := captureLogs(t)
 
-	err := run(ctx, []string{"watch", "-interval", "1ms", "V1"}, &output, &bytes.Buffer{},
+	err := run(ctx, []string{commandWatch, "-interval", "1ms", "V1"}, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
-	require.Empty(t, output.String())
+	require.Empty(t, logs.String())
 }
 
 func TestRunWatchUsesStream(t *testing.T) {
 	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
 		gos7logo.MustNewVMAddrFromString("V1"): 7,
 	}}
-	var output bytes.Buffer
+	logs := captureLogs(t)
 
-	err := run(context.Background(), []string{"watch", "V1"}, &output, &bytes.Buffer{},
+	err := run(context.Background(), []string{commandWatch, "V1"}, &bytes.Buffer{},
 		func(gos7logo.Config) logoClient { return client })
 
 	require.NoError(t, err)
-	require.Contains(t, output.String(), " V1=7\n")
+	require.Contains(t, logs.String(), "V1=7")
+}
+
+func TestRunWatchEnablesReconnect(t *testing.T) {
+	client := &fakeClient{values: map[gos7logo.VMAddr]uint32{
+		gos7logo.MustNewVMAddrFromString("V1"): 7,
+	}, streamErr: errors.New("connection lost")}
+	logs := captureLogs(t)
+	var config gos7logo.Config
+
+	err := run(context.Background(), []string{optionRetry, commandWatch, "V1"},
+		&bytes.Buffer{}, func(actual gos7logo.Config) logoClient {
+			config = actual
+			return client
+		})
+
+	require.NoError(t, err)
+	require.True(t, config.Reconnect)
+	require.Contains(t, logs.String(), "V1=7")
+	require.Contains(t, logs.String(), "stream failed; retrying")
+	require.Contains(t, logs.String(), "error=\"connection lost\"")
 }
 
 func TestCancelOnSignalWritesCarriageReturnBeforeCancelling(t *testing.T) {

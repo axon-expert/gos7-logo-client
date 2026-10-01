@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type TSAP uint16
@@ -57,25 +58,44 @@ func (t *TSAP) UnmarshalJSON(data []byte) error {
 }
 
 const (
-	defaultLocalTSAP  TSAP = 0x1000
-	defaultRemoteTSAP TSAP = 0x2000
-	defaultPort            = 102
+	defaultLocalTSAP             TSAP = 0x1000
+	defaultRemoteTSAP            TSAP = 0x2000
+	defaultPort                       = 102
+	defaultInitialReconnectDelay      = 250 * time.Millisecond
+	defaultMaxReconnectDelay          = 5 * time.Second
 )
 
 type Config struct {
-	Host       string `json:"host"        yaml:"host"        env:"HOST"`
-	Port       uint16 `json:"port"        yaml:"port"        env:"PORT"`
-	LocalTSAP  TSAP   `json:"local_tsap"  yaml:"local_tsap"  env:"LOCAL_TSAP"`
-	RemoteTSAP TSAP   `json:"remote_tsap" yaml:"remote_tsap" env:"REMOTE_TSAP"`
+	Host                  string        `json:"host"                    yaml:"host"                    env:"HOST"`
+	Port                  uint16        `json:"port"                    yaml:"port"                    env:"PORT"`
+	LocalTSAP             TSAP          `json:"local_tsap"              yaml:"local_tsap"              env:"LOCAL_TSAP"`
+	RemoteTSAP            TSAP          `json:"remote_tsap"             yaml:"remote_tsap"             env:"REMOTE_TSAP"`
+	Reconnect             bool          `json:"reconnect"               yaml:"reconnect"               env:"RECONNECT"`
+	InitialReconnectDelay time.Duration `json:"initial_reconnect_delay" yaml:"initial_reconnect_delay" env:"INITIAL_RECONNECT_DELAY"`
+	MaxReconnectDelay     time.Duration `json:"max_reconnect_delay"     yaml:"max_reconnect_delay"     env:"MAX_RECONNECT_DELAY"`
 }
 
 func NewConfig(host string) Config {
 	return Config{
-		Host:       host,
-		Port:       defaultPort,
-		LocalTSAP:  defaultLocalTSAP,
-		RemoteTSAP: defaultRemoteTSAP,
+		Host:                  host,
+		Port:                  defaultPort,
+		LocalTSAP:             defaultLocalTSAP,
+		RemoteTSAP:            defaultRemoteTSAP,
+		InitialReconnectDelay: defaultInitialReconnectDelay,
+		MaxReconnectDelay:     defaultMaxReconnectDelay,
 	}
+}
+
+func (c Config) reconnectDelays() (time.Duration, time.Duration) {
+	initial := c.InitialReconnectDelay
+	if initial <= 0 {
+		initial = defaultInitialReconnectDelay
+	}
+	maxDelay := c.MaxReconnectDelay
+	if maxDelay <= 0 {
+		maxDelay = defaultMaxReconnectDelay
+	}
+	return initial, max(initial, maxDelay)
 }
 
 func (c Config) endpoint() string {

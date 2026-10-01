@@ -11,21 +11,28 @@ Example:
 
 ```go
 config := gos7logo.NewConfig("localhost")
+config.Reconnect = true // Optional.
+config.InitialReconnectDelay = 250 * time.Millisecond
+config.MaxReconnectDelay = 5 * time.Second
 client := gos7logo.NewClient(config)
-if err := client.Connect(context.Background()); err != nil { ... }
-defer client.Disconnect()
+defer client.Close()
+ctx := context.Background()
 
 value := uint32(100)
 vmAddr, err := gos7logo.NewVMAddrFromString("V94")
 if err != nil { ... }
 
 // Write a value.
-if err := client.Write(vmAddr, value); err != nil { ... }
+if err := client.Write(ctx, vmAddr, value); err != nil { ... }
 
 // Read a value.
-result, err := client.Read(vmAddr)
+result, err := client.Read(ctx, vmAddr)
 if err != nil { ... }
 ```
+
+The client connects lazily on the first operation. When `Reconnect` is
+enabled, an operation that detects a broken connection still returns its error;
+later operations reconnect automatically with exponential backoff.
 
 ## Console client
 
@@ -41,11 +48,17 @@ Read, write, or continuously watch VM addresses:
 ./logo -host 192.168.0.10 -port 102 read V1 VW2 VD4
 ./logo -host 192.168.0.10 -port 102 write V1 42 V2.3 1
 ./logo -host 192.168.0.10 -port 102 watch -interval 500ms V1 VW2
+./logo -host 192.168.0.10 -port 102 -retry watch V1 VW2
 ./logo -host 192.168.0.10 -port 102 read Q1-Q8
 ```
 
 `read` and `watch` accept inclusive address ranges such as `V3-V5`, `VW10-VW15`,
 or the cross-byte bit range `V3.6-V4.2`.
+
+Variable-memory addresses are limited to `V0.0` through `V850.7`. Multi-byte
+values must also end within byte 850, so the last word is `VW849` and the last
+double word is `VD847`; see the
+[LOGO!Soft Comfort VM address restrictions](https://cache.industry.siemens.com/dl/files/852/109768852/att_990434/v1/Help_en-US.pdf#page=116).
 
 Digital outputs on LOGO! 0BA8 can be addressed as `Q1` through `Q64`. These
 names map to the controller's output VM range starting at `V1064.0`; see
@@ -57,6 +70,10 @@ Use `-f d` for decimal output (the default), `-f x` or `-f h` for hexadecimal,
 `-f b` for binary, and `-f o` for octal.
 Append an underscore, for example `-f x_`, to group hexadecimal output by bytes,
 binary output by four bits, or decimal and octal output by three digits.
+
+Use the global `-retry` option to retry `read` and `write` after connection
+errors, or to reconnect after polling errors while watching. Retries continue
+until the operation succeeds or the command is cancelled.
 
 Run `./logo -h` for connection options, including local and LOGO! TSAP values.
 

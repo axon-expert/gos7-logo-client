@@ -9,31 +9,29 @@ import (
 	"strings"
 )
 
-type DataType int
+type DataType uint8
 
 const (
 	Byte DataType = iota
 	Bit
 	Word
-	Counter
-	Timer
 	DWord
-	Real
 	Output
 )
 
 const (
-	outputByteStart = uint32(1064)
-	outputByteEnd   = uint32(1071)
+	maxVariableByte = uint16(850)
+	outputByteStart = uint16(1064)
+	outputByteEnd   = uint16(1071)
 )
 
 func (t DataType) Size() int {
 	switch t {
 	case Bit, Byte, Output:
 		return 1
-	case Word, Counter, Timer:
+	case Word:
 		return 2
-	case DWord, Real:
+	case DWord:
 		return 4
 	default:
 		return 0
@@ -46,7 +44,7 @@ func (t DataType) String() string {
 		return "V"
 	case Bit:
 		return "V"
-	case Word, Counter, Timer:
+	case Word:
 		return "VW"
 	case DWord:
 		return "VD"
@@ -75,11 +73,11 @@ func parseTypeByVMAddr(addr string) (DataType, error) {
 
 type VMAddr struct {
 	Type DataType
-	Byte uint32
+	Byte uint16
 	Bit  uint8
 }
 
-func NewVMAddr(t DataType, byteAddr uint32, bit uint8) (VMAddr, error) {
+func NewVMAddr(t DataType, byteAddr uint16, bit uint8) (VMAddr, error) {
 	addr := VMAddr{Type: t, Bit: bit, Byte: byteAddr}
 	if err := addr.Validate(); err != nil {
 		return VMAddr{}, err
@@ -87,7 +85,7 @@ func NewVMAddr(t DataType, byteAddr uint32, bit uint8) (VMAddr, error) {
 	return addr, nil
 }
 
-func MustNewVMAddr(t DataType, byteAddr uint32, bit uint8) VMAddr {
+func MustNewVMAddr(t DataType, byteAddr uint16, bit uint8) VMAddr {
 	addr, err := NewVMAddr(t, byteAddr, bit)
 	if err != nil {
 		panic(err)
@@ -106,10 +104,16 @@ func (a VMAddr) Validate() error {
 		if a.Type == Output && (a.Byte < outputByteStart || a.Byte > outputByteEnd) {
 			return fmt.Errorf("output address must be between Q1 and Q64")
 		}
-		return nil
-	}
-	if a.Bit != 0 {
+	} else if a.Bit != 0 {
 		return fmt.Errorf("bit index must be zero for data type %v: %d", a.Type, a.Bit)
+	}
+	if a.Type != Output && uint32(a.Byte)+uint32(a.Type.Size())-1 > uint32(maxVariableByte) {
+		return fmt.Errorf(
+			"variable address at byte %d with size %d ends after V%d",
+			a.Byte,
+			a.Type.Size(),
+			maxVariableByte,
+		)
 	}
 	return nil
 }
@@ -131,8 +135,11 @@ func MustNewVMAddrFromString(addr string) VMAddr {
 }
 
 func (addr VMAddr) MarshalText() ([]byte, error) {
+	if err := addr.Validate(); err != nil {
+		return nil, err
+	}
 	if addr.Type == Output {
-		output := (addr.Byte-outputByteStart)*8 + uint32(addr.Bit) + 1
+		output := uint32(addr.Byte-outputByteStart)*8 + uint32(addr.Bit) + 1
 		return fmt.Appendf(nil, "Q%d", output), nil
 	}
 	if addr.Type == Bit {
@@ -163,7 +170,7 @@ func (a *VMAddr) UnmarshalText(raw []byte) error {
 		output--
 		*a = VMAddr{
 			Type: Output,
-			Byte: outputByteStart + uint32(output/8),
+			Byte: outputByteStart + uint16(output/8),
 			Bit:  uint8(output % 8),
 		}
 		return nil
@@ -174,11 +181,11 @@ func (a *VMAddr) UnmarshalText(raw []byte) error {
 	if addrType == Word || addrType == DWord {
 		prefixLength = 2
 	}
-	byteAddr, err := strconv.ParseUint(addrSlice[0][prefixLength:], 10, 32)
+	byteAddr, err := strconv.ParseUint(addrSlice[0][prefixLength:], 10, 16)
 	if err != nil {
 		return fmt.Errorf("invalid byte address: %w", err)
 	}
-	parsed := VMAddr{Type: addrType, Byte: uint32(byteAddr)}
+	parsed := VMAddr{Type: addrType, Byte: uint16(byteAddr)}
 	if addrType == Bit {
 		bitAddr, err := strconv.ParseUint(addrSlice[1], 10, 8)
 		if err != nil {
@@ -218,4 +225,55 @@ func (values VMAddrValues) Get(addr VMAddr) (uint32, bool) {
 
 func compareVMAddrByte(lhs, rhs VMAddr) int {
 	return cmp.Compare(lhs.Byte, rhs.Byte)
+}
+
+func (c *client) getIntFromBuffer(addr VMAddr, buff []byte) (uint32, error) {
+	if err := addr.Validate(); err != nil {
+		return 0, fmt.Errorf("read: %w", err)
+	}
+	if len(buff) < addr.Type.Size() {
+		return 0, fmt.Errorf("buffer too small for type %v", addr.Type)
+	}
+	switch addr.Type {
+	case Bit, Output:
+		var result uint8
+		c.helper.GetValueAt(buff, 0, &result)
+		return uint32(result >> addr.Bit & 1), nil
+	case Byte:
+		var result uint8
+		c.helper.GetValueAt(buff, 0, &result)
+		return uint32(result), nil
+	case Word:
+		var result uint16
+		c.helper.GetValueAt(buff, 0, &result)
+		return uint32(result), nil
+	case DWord:
+		var result uint32
+		c.helper.GetValueAt(buff, 0, &result)
+		return uint32(result), nil
+	}
+
+	return 0, errors.New("read: unknown data type")
+}
+
+func vmAddrRange(addrs []VMAddr) (uint16, int, error) {
+	if len(addrs) == 0 {
+		return 0, 0, errors.New("addresses are empty")
+	}
+	start := addrs[0].Byte
+	var end uint32
+	for _, addr := range addrs {
+		if err := addr.Validate(); err != nil {
+			return 0, 0, err
+		}
+		if addr.Byte < start {
+			start = addr.Byte
+		}
+		addrEnd := uint32(addr.Byte) + uint32(addr.Type.Size())
+		if addrEnd > end {
+			end = addrEnd
+		}
+	}
+	span := end - uint32(start)
+	return start, int(span), nil
 }

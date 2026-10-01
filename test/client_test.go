@@ -19,25 +19,51 @@ var errConnection error    // nolint:gochecknoglobals
 func TestMain(m *testing.M) {
 	// TODO: launch snap7 server
 	cl := gos7logo.NewClient(gos7logo.NewConfig("localhost"))
-	errConnection = cl.Connect(context.Background())
+	_, errConnection = cl.Read(context.Background(), gos7logo.MustNewVMAddrFromString("V0"))
 	if errConnection != nil {
 		fmt.Printf("controller tests will be skipped: %s\n", errConnection)
 	}
 	client = cl
 
 	code := m.Run()
-	if err := client.Disconnect(); err != nil {
-		fmt.Printf("failed to disconnect: %s\n", err)
+	if err := client.Close(); err != nil {
+		fmt.Printf("failed to close: %s\n", err)
 	}
 	os.Exit(code)
 }
 
-func FuzzClientWriteRead(f *testing.F) {
-	f.Add("VD3", uint32(rand.Intn(100)))
-	f.Add("V2.4", uint32(0))
-	f.Add("V94", uint32(rand.Intn(100)))
-	f.Add("VW31", uint32(rand.Intn(100)))
-	f.Fuzz(writeReadTest)
+func FuzzVMAddrTextRoundTrip(f *testing.F) {
+	for _, seed := range []string{"VD3", "V2.4", "V94", "VW31", "Q1", "invalid"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		addr, err := gos7logo.NewVMAddrFromString(input)
+		if err != nil {
+			return
+		}
+		raw, err := addr.MarshalText()
+		require.NoError(t, err)
+		decoded, err := gos7logo.NewVMAddrFromString(string(raw))
+		require.NoError(t, err)
+		require.Equal(t, addr, decoded)
+	})
+}
+
+func TestClientWriteRead(t *testing.T) {
+	tests := []struct {
+		addr  string
+		value uint32
+	}{
+		{addr: "VD3", value: uint32(rand.Intn(100))},
+		{addr: "V2.4", value: 1},
+		{addr: "V94", value: uint32(rand.Intn(100))},
+		{addr: "VW31", value: uint32(rand.Intn(100))},
+	}
+	for _, test := range tests {
+		t.Run(test.addr, func(t *testing.T) {
+			writeReadTest(t, test.addr, test.value)
+		})
+	}
 }
 
 func TestClientWriteManyRead(t *testing.T) {
@@ -63,23 +89,26 @@ func TestClientWriteManyRead(t *testing.T) {
 
 	vmAddrVals := []gos7logo.VMAddrValue{
 		{VMAddr: vdVMAddr, Value: uint32(rand.Intn(100))},
-		{VMAddr: v1VMAddr, Value: uint32(0)},
+		{VMAddr: v1VMAddr, Value: uint32(1)},
 		{VMAddr: v2VMAddr, Value: uint32(rand.Intn(100))},
 		{VMAddr: vwVMAddr, Value: uint32(rand.Intn(100))},
 	}
 
-	if err := client.WriteMany(vmAddrVals...); err != nil {
+	if err := client.WriteMany(context.Background(), vmAddrVals...); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, val := range vmAddrVals {
-		v, err := client.Read(val.VMAddr)
+		v, err := client.Read(context.Background(), val.VMAddr)
 		if err != nil {
 			t.Errorf("failed read: %s", err)
 		}
 
 		if val.VMAddr.Type == gos7logo.Bit {
-			expectedBit := (val.Value >> uint32(val.VMAddr.Bit)) & 1
+			expectedBit := uint32(0)
+			if val.Value != 0 {
+				expectedBit = 1
+			}
 			if expectedBit != v {
 				t.Errorf("write and read values not equals for bit: expected %d, got %d",
 					expectedBit, v)
@@ -107,6 +136,7 @@ func TestClientReadMany(t *testing.T) {
 	addr3 := vmAddr("V4.2")
 
 	if err := client.WriteMany(
+		context.Background(),
 		gos7logo.VMAddrValue{VMAddr: addr1, Value: 123},
 		gos7logo.VMAddrValue{VMAddr: addr2, Value: 1},
 		gos7logo.VMAddrValue{VMAddr: addr3, Value: 0},
@@ -114,7 +144,7 @@ func TestClientReadMany(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := client.ReadMany(addr1, addr2, addr3)
+	res, err := client.ReadMany(context.Background(), addr1, addr2, addr3)
 	require.NoError(t, err)
 	require.Len(t, res, 3)
 	require.Equal(t, gos7logo.VMAddrValue{VMAddr: addr1, Value: 123}, res[0])
@@ -130,17 +160,20 @@ func writeReadTest(t *testing.T, vmAddr string, value uint32) {
 	if err != nil {
 		t.Errorf("no correct vm address `%s`: %s", vmAddr, err)
 	}
-	if err := client.Write(addr, value); err != nil {
+	if err := client.Write(context.Background(), addr, value); err != nil {
 		t.Errorf("failed write from %s: %s", vmAddr, err)
 	}
-	v, err := client.Read(addr)
+	v, err := client.Read(context.Background(), addr)
 	if err != nil {
 		t.Errorf("failed read from %s: %s", vmAddr, err)
 	}
 
 	if addr.Type == gos7logo.Bit {
-		expectedBit := (0 >> uint32(addr.Bit)) & 1
-		if expectedBit != 0 {
+		expectedBit := uint32(0)
+		if value != 0 {
+			expectedBit = 1
+		}
+		if expectedBit != v {
 			t.Errorf("write and read values not equals for bit: expected %d, got %d",
 				expectedBit, v)
 		}

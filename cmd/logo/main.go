@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	internallog "github.com/axon-expert/gos7-logo-client/internal/log"
 	gos7logo "github.com/axon-expert/gos7-logo-client/logo"
 )
 
@@ -34,12 +35,16 @@ Addresses:
 Connection options:
 `
 
+var logger = slog.New(internallog.SimpleHandler{ //nolint:gochecknoglobals // shared command logger
+	Level:  slog.LevelInfo,
+	Writer: os.Stderr,
+})
+
 type logoClient interface {
-	Connect(context.Context) error
-	Read(gos7logo.VMAddr) (uint32, error)
+	Read(context.Context, gos7logo.VMAddr) (uint32, error)
 	Stream(context.Context, time.Duration, ...gos7logo.VMAddr) (<-chan gos7logo.StreamResult, error)
-	Write(gos7logo.VMAddr, uint32) error
-	Disconnect() error
+	Write(context.Context, gos7logo.VMAddr, uint32) error
+	Close() error
 }
 
 type clientFactory func(gos7logo.Config) logoClient
@@ -50,6 +55,7 @@ type commandConfig struct {
 	localTSAP gos7logo.TSAP
 	logoTSAP  gos7logo.TSAP
 	format    string
+	retry     bool
 }
 
 func main() {
@@ -64,14 +70,14 @@ func realMain() int {
 	defer signal.Stop(signals)
 	go cancelOnSignal(ctx, signals, os.Stdout, cancel)
 
-	err := run(ctx, os.Args[1:], os.Stdout, os.Stderr,
+	err := run(ctx, os.Args[1:], os.Stderr,
 		func(config gos7logo.Config) logoClient {
 			return gos7logo.NewClient(config)
 		})
 	if err == nil || errors.Is(err, flag.ErrHelp) {
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "logo: %v\n", err)
+	logger.ErrorContext(ctx, "command failed", slog.Any("error", err))
 	return 1
 }
 
@@ -92,7 +98,7 @@ func cancelOnSignal(
 func run(
 	ctx context.Context,
 	args []string,
-	stdout, stderr io.Writer,
+	stderr io.Writer,
 	newClient clientFactory,
 ) (err error) {
 	options := flag.NewFlagSet("logo", flag.ContinueOnError)
@@ -129,6 +135,12 @@ func run(
 		"f",
 		cfg.format,
 		"output format: d, x/h, b, or o; append _ to group digits",
+	)
+	options.BoolVar(
+		&cfg.retry,
+		"retry",
+		false,
+		"retry operations after connection errors",
 	)
 	options.Usage = func() {
 		_, _ = fmt.Fprint(stderr, usage)
@@ -180,24 +192,21 @@ func run(
 	clientConfig.Port = uint16(cfg.port)
 	clientConfig.LocalTSAP = cfg.localTSAP
 	clientConfig.RemoteTSAP = cfg.logoTSAP
+	clientConfig.Reconnect = cfg.retry
 	client := newClient(clientConfig)
-	if err := client.Connect(ctx); err != nil {
-		endpoint := net.JoinHostPort(cfg.host, strconv.FormatUint(uint64(cfg.port), 10))
-		return fmt.Errorf("connect to %s: %w", endpoint, err)
-	}
 	defer func() {
-		if disconnectErr := client.Disconnect(); err == nil && disconnectErr != nil {
-			err = fmt.Errorf("disconnect: %w", disconnectErr)
+		if closeErr := client.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close: %w", closeErr)
 		}
 	}()
 
 	switch command {
 	case "read":
-		return readValues(client, addresses, cfg.format, stdout)
+		return readValues(ctx, client, addresses, cfg.retry, cfg.format)
 	case "write":
-		return writeValues(client, addresses, values, cfg.format, stdout)
+		return writeValues(ctx, client, addresses, values, cfg.retry, cfg.format)
 	case "watch":
-		return watchValues(ctx, client, addresses, interval, cfg.format, stdout)
+		return watchValues(ctx, client, addresses, interval, cfg.retry, cfg.format)
 	default:
 		panic("unreachable")
 	}
@@ -257,10 +266,10 @@ func expandAddressRange(start, end gos7logo.VMAddr) ([]gos7logo.VMAddr, error) {
 	addresses := make([]gos7logo.VMAddr, int(length))
 	for i := range addresses {
 		index := startIndex + uint64(i)
-		byteAddr := uint32(index)
+		byteAddr := uint16(index)
 		var bit uint8
 		if start.Type == gos7logo.Bit || start.Type == gos7logo.Output {
-			byteAddr = uint32(index / 8)
+			byteAddr = uint16(index / 8)
 			bit = uint8(index % 8)
 		}
 		addresses[i] = gos7logo.MustNewVMAddr(start.Type, byteAddr, bit)
@@ -379,49 +388,83 @@ func groupDigits(value string, size int) string {
 }
 
 func readValues(
+	ctx context.Context,
 	client logoClient,
 	addresses []gos7logo.VMAddr,
+	retry bool,
 	format string,
-	output io.Writer,
 ) error {
 	for _, addr := range addresses {
-		value, err := client.Read(addr)
+		var value uint32
+		err := retryOperation(ctx, retry, func() error {
+			var err error
+			value, err = client.Read(ctx, addr)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", addr, err)
+			}
+			return nil
+		})
 		if err != nil {
-			return fmt.Errorf("read %s: %w", addr, err)
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
-		if _, err := fmt.Fprintf(
-			output,
-			"%s=%s\n",
-			addr,
-			formatValue(addr, value, format),
-		); err != nil {
-			return fmt.Errorf("print value: %w", err)
-		}
+		logger.InfoContext(ctx, fmt.Sprintf("%s=%s", addr, formatValue(addr, value, format)))
 	}
 	return nil
 }
 
 func writeValues(
+	ctx context.Context,
 	client logoClient,
 	addresses []gos7logo.VMAddr,
 	values []uint32,
+	retry bool,
 	format string,
-	output io.Writer,
 ) error {
 	for i, addr := range addresses {
-		if err := client.Write(addr, values[i]); err != nil {
-			return fmt.Errorf("write %s: %w", addr, err)
+		err := retryOperation(ctx, retry, func() error {
+			if err := client.Write(ctx, addr, values[i]); err != nil {
+				return fmt.Errorf("write %s: %w", addr, err)
+			}
+			return nil
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
-		if _, err := fmt.Fprintf(
-			output,
-			"%s=%s\n",
-			addr,
-			formatValue(addr, values[i], format),
-		); err != nil {
-			return fmt.Errorf("print value: %w", err)
-		}
+		logger.InfoContext(
+			ctx,
+			fmt.Sprintf("%s=%s", addr, formatValue(addr, values[i], format)),
+		)
 	}
 	return nil
+}
+
+func retryOperation(
+	ctx context.Context,
+	retry bool,
+	operation func() error,
+) error {
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !retry || gos7logo.IsPLCError(err) {
+			return err
+		}
+		logger.WarnContext(ctx, "operation failed; retrying", slog.Any("error", err))
+	}
 }
 
 func watchValues(
@@ -429,8 +472,8 @@ func watchValues(
 	client logoClient,
 	addresses []gos7logo.VMAddr,
 	interval time.Duration,
+	retry bool,
 	format string,
-	output io.Writer,
 ) error {
 	stream, err := client.Stream(ctx, interval, addresses...)
 	if err != nil {
@@ -438,35 +481,33 @@ func watchValues(
 	}
 	for result := range stream {
 		if result.Err != nil {
+			if retry && !gos7logo.IsPLCError(result.Err) {
+				logger.WarnContext(ctx, "stream failed; retrying", slog.Any("error", result.Err))
+				continue
+			}
 			return result.Err
 		}
-		if err := printSample(result.Data, format, output); err != nil {
-			return err
-		}
+		logSample(ctx, result.Data, format)
 	}
 	return nil
 }
 
-func printSample(
+func logSample(
+	ctx context.Context,
 	values gos7logo.VMAddrValues,
 	format string,
-	output io.Writer,
-) error {
+) {
 	var sample bytes.Buffer
-	_, _ = fmt.Fprint(&sample, time.Now().Format(time.RFC3339))
-	for _, value := range values {
+	for i, value := range values {
+		if i > 0 {
+			_ = sample.WriteByte(' ')
+		}
 		_, _ = fmt.Fprintf(
 			&sample,
-			" %s=%s",
+			"%s=%s",
 			value.VMAddr,
 			formatValue(value.VMAddr, value.Value, format),
 		)
 	}
-	if err := sample.WriteByte('\n'); err != nil {
-		return fmt.Errorf("build sample: %w", err)
-	}
-	if _, err := sample.WriteTo(output); err != nil {
-		return fmt.Errorf("print sample: %w", err)
-	}
-	return nil
+	logger.InfoContext(ctx, sample.String())
 }

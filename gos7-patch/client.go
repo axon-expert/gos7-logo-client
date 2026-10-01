@@ -240,7 +240,7 @@ func (mb *client) readArea(
 				err = fmt.Errorf(ErrorText(errIsoInvalidDataSize)+"'%v'", len(response.Data))
 			} else {
 				if response.Data[21] != 0xFF {
-					err = fmt.Errorf(ErrorText(CPUError(uint(response.Data[21]))))
+					err = &PLCError{Code: CPUError(uint(response.Data[21]))}
 				} else {
 					//copy response to buffer
 					copy(buffer[offset:offset+sizeRequested], response.Data[25:25+sizeRequested])
@@ -374,7 +374,7 @@ func (mb *client) writeArea(
 		if err == nil {
 			if length = len(response.Data); length == 22 {
 				if response.Data[21] != byte(0xFF) {
-					err = fmt.Errorf(ErrorText(CPUError(uint(response.Data[21]))))
+					err = &PLCError{Code: CPUError(uint(response.Data[21]))}
 				}
 			} else {
 				err = fmt.Errorf(ErrorText(errIsoInvalidPDU))

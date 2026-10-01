@@ -5,6 +5,16 @@ package gos7patch
 // of the BSD license. See the LICENSE file for details.
 import "strconv"
 
+// PLCError is an error returned by the PLC for an otherwise successful exchange.
+// It does not indicate that the transport connection is unusable.
+type PLCError struct {
+	Code int
+}
+
+func (e *PLCError) Error() string {
+	return ErrorText(e.Code)
+}
+
 const (
 	errTCPSocketCreation    = 1
 	errTCPConnectionTimeout = 2
